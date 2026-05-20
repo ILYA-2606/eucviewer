@@ -225,8 +225,8 @@ html, body {
     overflow-y: auto;
     display: flex;
     flex-direction: column;
-    padding: 6px;
-    gap: 6px;
+    padding: 8px;
+    gap: 10px;
 }
 #charts::-webkit-scrollbar { width: 4px; }
 #charts::-webkit-scrollbar-thumb { background: #00e5ff33; border-radius: 2px; }
@@ -236,10 +236,11 @@ html, body {
     border: 1px solid rgba(255, 255, 255, 0.04);
     border-radius: 5px;
     padding: 6px 8px 4px;
-    flex: 1;
-    min-height: 90px;
+    flex: 1 0 112px;
+    min-height: 112px;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 .chart-header {
     display: flex;
@@ -265,6 +266,7 @@ html, body {
 
 .chart-block canvas {
     flex: 1;
+    min-height: 0;
     width: 100%;
     display: block;
     cursor: crosshair;

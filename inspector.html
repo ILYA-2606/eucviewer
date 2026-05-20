@@ -1,17 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-i18n-title="inspector.title">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Trip Inspector &mdash; DarknessBot</title>
     <link rel="icon" href="static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
-    <link rel="stylesheet" href="static/css/inspector.css?v=7" />
+    <link rel="stylesheet" href="static/css/inspector.css?v=10" />
 </head>
 <body>
     <div id="inspector">
         <header id="dash">
-            <a class="back-link" href="index.html#view" title="Back to trip list">&larr;</a>
+            <a class="back-link" href="index.html#view" title="Back to trip list" data-i18n-title="inspector.backTitle">&larr;</a>
             <div class="trip-title">
                 <div id="trip-name">&mdash;</div>
                 <div id="trip-subtitle"></div>
@@ -24,8 +24,8 @@
                     <line id="speedo-needle" x1="60" y1="60" x2="60" y2="18" />
                     <circle cx="60" cy="60" r="4" class="gauge-hub" />
                 </svg>
-                <div class="gauge-value"><span id="speedo-value">0</span><small>km/h</small></div>
-                <div class="gauge-label">Speed</div>
+                <div class="gauge-value"><span id="speedo-value">0</span><small data-i18n="unit.speed">km/h</small></div>
+                <div class="gauge-label" data-i18n="metric.speed">Speed</div>
             </div>
 
             <div class="gauge gauge-battery">
@@ -33,32 +33,32 @@
                     <div class="battery-fill" id="battery-fill"></div>
                     <div class="battery-text" id="battery-value">&mdash;</div>
                 </div>
-                <div class="gauge-label">Battery</div>
+                <div class="gauge-label" data-i18n="metric.battery">Battery</div>
             </div>
 
             <div class="readout">
-                <div class="readout-label">Distance</div>
-                <div class="readout-value"><span id="odo-value">0.00</span><small>km</small></div>
-                <div class="readout-sub">of <span id="odo-total">0.00</span> km</div>
+                <div class="readout-label" data-i18n="metric.distance">Distance</div>
+                <div class="readout-value"><span id="odo-value">0.00</span><small data-i18n="unit.distance">km</small></div>
+                <div class="readout-sub"><span data-i18n="inspector.ofDistance">of</span> <span id="odo-total">0.00</span> <span data-i18n="unit.distance">km</span></div>
             </div>
 
             <div class="readout">
-                <div class="readout-label">Voltage</div>
-                <div class="readout-value"><span id="volt-value">&mdash;</span><small>V</small></div>
+                <div class="readout-label" data-i18n="metric.voltage">Voltage</div>
+                <div class="readout-value"><span id="volt-value">&mdash;</span><small data-i18n="unit.voltage">V</small></div>
             </div>
 
             <div class="readout">
-                <div class="readout-label">Temp</div>
-                <div class="readout-value"><span id="temp-value">&mdash;</span><small>&deg;C</small></div>
+                <div class="readout-label" data-i18n="metric.temp">Temp</div>
+                <div class="readout-value"><span id="temp-value">&mdash;</span><small data-i18n="unit.temperature">&deg;C</small></div>
             </div>
 
             <div class="readout">
-                <div class="readout-label">Altitude</div>
-                <div class="readout-value"><span id="alt-value">&mdash;</span><small>m</small></div>
+                <div class="readout-label" data-i18n="metric.altitude">Altitude</div>
+                <div class="readout-value"><span id="alt-value">&mdash;</span><small data-i18n="unit.altitude">m</small></div>
             </div>
 
             <div class="readout clock">
-                <div class="readout-label">Time</div>
+                <div class="readout-label" data-i18n="metric.time">Time</div>
                 <div class="readout-value mono"><span id="clock-value">00:00:00</span></div>
                 <div class="readout-sub mono">/ <span id="clock-total">00:00:00</span></div>
             </div>
@@ -67,42 +67,42 @@
         <main id="stage">
             <div id="map">
                 <div id="map-controls" class="hidden collapsed">
-                    <button type="button" id="map-controls-toggle" title="Map settings" aria-label="Map settings">
+                    <button type="button" id="map-controls-toggle" title="Map settings" aria-label="Map settings" data-i18n-title="inspector.mapSettings" data-i18n-aria-label="inspector.mapSettings">
                         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
                     </button>
                     <div class="map-controls-body">
                         <label>
-                            <span>Map style</span>
+                            <span data-i18n="inspector.mapStyle">Map style</span>
                             <select id="theme-select">
-                                <option value="dark">Dark</option>
-                                <option value="light">Light</option>
-                                <option value="satellite" selected>Satellite</option>
+                                <option value="dark" data-i18n="map.dark">Dark</option>
+                                <option value="light" data-i18n="inspector.light">Light</option>
+                                <option value="satellite" selected data-i18n="map.satellite">Satellite</option>
                             </select>
                         </label>
                         <label>
-                            <span>Trace color</span>
+                            <span data-i18n="inspector.traceColor">Trace color</span>
                             <select id="color-select">
-                                <option value="solid" selected>Solid</option>
-                                <option value="speed">Speed</option>
-                                <option value="battery">Battery</option>
-                                <option value="voltage">Voltage</option>
-                                <option value="temp">Temp</option>
-                                <option value="altitude">Altitude</option>
+                                <option value="solid" selected data-i18n="inspector.solid">Solid</option>
+                                <option value="speed" data-i18n="metric.speed">Speed</option>
+                                <option value="battery" data-i18n="metric.battery">Battery</option>
+                                <option value="voltage" data-i18n="metric.voltage">Voltage</option>
+                                <option value="temp" data-i18n="metric.temp">Temp</option>
+                                <option value="altitude" data-i18n="metric.altitude">Altitude</option>
                             </select>
                         </label>
                         <div class="follow-group">
-                            <span class="follow-label">Follow</span>
+                            <span class="follow-label" data-i18n="inspector.follow">Follow</span>
                             <label class="follow-row">
                                 <input type="checkbox" id="follow-pan" checked />
-                                <span>Pan</span>
+                                <span data-i18n="inspector.followPan">Pan</span>
                             </label>
                             <label class="follow-row">
                                 <input type="checkbox" id="follow-rotate" checked />
-                                <span>Rot</span>
+                                <span data-i18n="inspector.followRotate">Rot</span>
                             </label>
                             <label class="follow-row">
                                 <input type="checkbox" id="follow-zoom" checked />
-                                <span>Zoom</span>
+                                <span data-i18n="inspector.followZoom">Zoom</span>
                             </label>
                         </div>
                         <div id="color-legend" class="hidden">
@@ -118,35 +118,35 @@
 
             <aside id="charts">
                 <div class="chart-block" data-key="speed">
-                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label">Speed</span><span class="chart-reading" data-reading></span></div>
+                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label" data-i18n="metric.speed">Speed</span><span class="chart-reading" data-reading></span></div>
                     <canvas></canvas>
                 </div>
                 <div class="chart-block" data-key="battery">
-                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label">Battery</span><span class="chart-reading" data-reading></span></div>
+                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label" data-i18n="metric.battery">Battery</span><span class="chart-reading" data-reading></span></div>
                     <canvas></canvas>
                 </div>
                 <div class="chart-block" data-key="voltage">
-                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label">Voltage</span><span class="chart-reading" data-reading></span></div>
+                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label" data-i18n="metric.voltage">Voltage</span><span class="chart-reading" data-reading></span></div>
                     <canvas></canvas>
                 </div>
                 <div class="chart-block" data-key="temp">
-                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label">Temp</span><span class="chart-reading" data-reading></span></div>
+                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label" data-i18n="metric.temp">Temp</span><span class="chart-reading" data-reading></span></div>
                     <canvas></canvas>
                 </div>
                 <div class="chart-block" data-key="altitude">
-                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label">Altitude</span><span class="chart-reading" data-reading></span></div>
+                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label" data-i18n="metric.altitude">Altitude</span><span class="chart-reading" data-reading></span></div>
                     <canvas></canvas>
                 </div>
             </aside>
         </main>
 
         <footer id="playback">
-            <button id="play-btn" title="Play / Pause">&#9654;</button>
+            <button id="play-btn" title="Play / Pause" data-i18n-title="inspector.playPause">&#9654;</button>
             <div class="scrub-wrap">
                 <input id="scrub" type="range" min="0" max="1000" step="1" value="0" />
             </div>
             <div class="speed-group">
-                <label>Speed</label>
+                <label data-i18n="inspector.playbackSpeed">Speed</label>
                 <select id="speed-select">
                     <option value="1">1&times;</option>
                     <option value="4">4&times;</option>
@@ -163,7 +163,8 @@
         <div id="error-banner" class="hidden"></div>
     </div>
 
+    <script src="static/js/i18n.js?v=5"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-    <script src="static/js/inspector.js?v=20"></script>
+    <script src="static/js/inspector.js?v=23"></script>
 </body>
 </html>

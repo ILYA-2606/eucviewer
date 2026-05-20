@@ -6,23 +6,27 @@
     <title>DarknessBot Trip Viewer</title>
     <link rel="icon" href="static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="static/css/style.css?v=21" />
+    <link rel="stylesheet" href="static/css/style.css?v=22" />
 </head>
 <body>
     <div id="map"></div>
 
     <div id="upload-overlay">
+        <div id="language-switcher" aria-label="Language" data-i18n-aria-label="language.switcherLabel">
+            <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
+            <button type="button" data-lang-option="ru" aria-pressed="false">RU</button>
+        </div>
         <div id="upload-box">
             <img id="upload-icon" src="static/favicon.svg" alt="" />
-            <h1><a id="app-link" href="https://trips.darknessproduction.com/" target="_blank" rel="noopener"><strong>DarknessBot</strong></a> Trip Viewer</h1>
+            <h1><a id="app-link" href="https://trips.darknessproduction.com/" target="_blank" rel="noopener"><strong>DarknessBot</strong></a> <span data-i18n="app.headingSuffix">Trip Viewer</span></h1>
             <div id="upload-hint">
-                <p>In DarknessBot, open <strong>Trips</strong> and share a ride (.csv), or choose <strong>Export trips</strong> from the Settings / Application / App Data (.dbb).</p>
+                <p data-i18n-html="upload.hint">In DarknessBot, open <strong>Trips</strong> and share a ride (.csv), or choose <strong>Export trips</strong> from the Settings / Application / App Data (.dbb).</p>
             </div>
             <label id="upload-label" for="file-input">
-                .dbb / .csv file
+                <span data-i18n="upload.fileButton">.dbb / .csv file</span>
                 <input type="file" id="file-input" accept=".dbb,.csv" />
             </label>
-            <button type="button" id="about-button">About</button>
+            <button type="button" id="about-button" data-i18n="about.button">About</button>
             <div id="progress-area" class="hidden">
                 <div id="progress-bar"><div id="progress-fill"></div></div>
                 <div id="progress-text"></div>
@@ -31,7 +35,7 @@
     </div>
 
     <div id="trip-panel" class="hidden">
-        <div id="panel-tab"><span id="panel-tab-text">Trip Explorer</span></div>
+        <div id="panel-tab"><span id="panel-tab-text" data-i18n="panel.tripExplorer">Trip Explorer</span></div>
         <div id="panel-body">
             <div id="panel-header"></div>
             <div id="trip-detail" class="hidden"></div>
@@ -41,30 +45,37 @@
     </div>
 
     <div id="page-footer">
-        <a href="https://github.com/ILYA-2606/eucviewer" target="_blank" rel="noopener" title="View / contribute on GitHub">
+        <a href="https://github.com/ILYA-2606/eucviewer" target="_blank" rel="noopener" title="View / contribute on GitHub" data-i18n-title="footer.githubTitle">
             <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
                 <path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
             </svg>
             <span>GitHub</span>
         </a>
-        <span id="page-version" title="HTML last-modified date (auto-updated on deploy)"></span>
+        <span id="page-version" title="HTML last-modified date (auto-updated on deploy)" data-i18n-title="footer.buildTitle"></span>
     </div>
     <div id="about-modal" class="hidden" role="dialog" aria-modal="true" aria-labelledby="about-title">
         <div id="about-card">
-            <button type="button" id="about-close" aria-label="Close About">&times;</button>
-            <h2 id="about-title">About</h2>
-            <p>This is an open-source project for viewing trip exports from the DarknessBot app.</p>
-            <p>It is a fork of <a href="https://github.com/eried/eucviewer" target="_blank" rel="noopener">eried/eucviewer</a>.</p>
-            <p>Thanks to Erwin Ried for creating the original viewer!</p>
+            <button type="button" id="about-close" aria-label="Close About" data-i18n-aria-label="about.close">&times;</button>
+            <h2 id="about-title" data-i18n="about.title">About</h2>
+            <p data-i18n="about.text">This is an open-source project for viewing trip exports from the DarknessBot app.</p>
+            <p data-i18n-html="about.fork">It is a fork of <a href="https://github.com/eried/eucviewer" target="_blank" rel="noopener">eried/eucviewer</a>.</p>
+            <p data-i18n="about.thanks">Thanks to Erwin Ried for creating the original viewer!</p>
         </div>
     </div>
+    <script src="static/js/i18n.js?v=5"></script>
     <script>
         (function(){
-            var d = new Date(document.lastModified);
-            var iso = isNaN(d.getTime())
-                ? document.lastModified
-                : d.toISOString().slice(0, 16).replace('T', ' ');
-            document.getElementById('page-version').textContent = 'build ' + iso;
+            function updatePageVersion() {
+                var d = new Date(document.lastModified);
+                var iso = isNaN(d.getTime())
+                    ? document.lastModified
+                    : d.toISOString().slice(0, 16).replace('T', ' ');
+                var i18n = window.appI18n;
+                document.getElementById('page-version').textContent = i18n ? i18n.t('footer.build', { date: iso }) : 'build ' + iso;
+            }
+            if (window.appI18n) window.appI18n.ready.then(updatePageVersion);
+            else updatePageVersion();
+            window.addEventListener('i18n:change', updatePageVersion);
         })();
         (function(){
             var modal = document.getElementById('about-modal');
@@ -80,6 +91,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="static/js/app.js?v=30"></script>
+    <script src="static/js/app.js?v=35"></script>
 </body>
 </html>
