@@ -7,6 +7,7 @@
   }};
   await i18n.ready;
   const tr = (key, params) => i18n.t(key, params);
+  const unitText = (item) => item?.unit || (item?.unitKey ? tr(item.unitKey) : "");
 
   // ---------- Load track ----------
   const params = new URLSearchParams(location.search);
@@ -213,12 +214,12 @@
   // Color-by configs: invert=true means high value is "good" (green end of palette).
   const COLOR_MODES = {
     speed:    { pointIdx: P_SPD,  unitKey: "unit.speed", invert: false },
-    pwm:      { pointIdx: P_PWM,     unitKey: "unit.percent", invert: false },
+    pwm:      { pointIdx: P_PWM,     unit: "%", invert: false },
     power:    { pointIdx: P_POWER,   unitKey: "unit.w", invert: false },
     current:  { pointIdx: P_CURRENT, unitKey: "unit.a", invert: false },
-    battery:  { pointIdx: P_BATT, unitKey: "unit.percent", invert: true  },
+    battery:  { pointIdx: P_BATT, unit: "%", invert: true  },
     voltage:  { pointIdx: P_VOLT, unitKey: "unit.voltage", invert: true  },
-    temp:     { pointIdx: P_TEMP, unitKey: "unit.temperature", invert: false },
+    temp:     { pointIdx: P_TEMP, unit: "\u00b0C", invert: false },
     altitude: { pointIdx: P_ALT,  unitKey: "unit.altitude", invert: false }
   };
   // Palette low → high; inverted modes reverse stops.
@@ -321,7 +322,7 @@
     }
     if (!isFinite(minV) || !isFinite(maxV)) return null;
     if (minV === maxV) maxV = minV + 1;
-    return { min: minV, max: maxV, invert: cfg.invert, unit: tr(cfg.unitKey) };
+    return { min: minV, max: maxV, invert: cfg.invert, unit: unitText(cfg) };
   }
 
   // Builds a line-gradient expression for coords[0..endIdx]. Each vertex's
@@ -642,12 +643,12 @@
   // ---------- Charts ----------
   const CHART_CONFIG = {
     speed:    { color: "#00e5ff", idx: SPD,  unitKey: "unit.speed" },
-    pwm:      { color: "#ff4081", idx: PWM, unitKey: "unit.percent" },
+    pwm:      { color: "#ff4081", idx: PWM, unit: "%" },
     power:    { color: "#7c4dff", idx: POWER, unitKey: "unit.w" },
     current:  { color: "#ffd740", idx: CURRENT, unitKey: "unit.a" },
     voltage:  { color: "#ff5252", idx: VOLT, unitKey: "unit.voltage" },
-    temp:     { color: "#ffa000", idx: TEMP, unitKey: "unit.temperature" },
-    battery:  { color: "#69f0ae", idx: BATT, unitKey: "unit.percent" },
+    temp:     { color: "#ffa000", idx: TEMP, unit: "\u00b0C" },
+    battery:  { color: "#69f0ae", idx: BATT, unit: "%" },
     altitude: { color: "#ce93d8", idx: ALT,  unitKey: "unit.altitude" },
   };
 
@@ -897,7 +898,7 @@
     const fracIdx = currentSampleIdx + sampleFraction;
     charts.forEach(c => {
       const decimals = c.key === "power" ? 0 : 1;
-      c.reading.textContent = sampleAt(c.cfg.idx).toFixed(decimals) + " " + tr(c.cfg.unitKey);
+      c.reading.textContent = sampleAt(c.cfg.idx).toFixed(decimals) + " " + unitText(c.cfg);
       drawChart(c, fracIdx);
     });
 

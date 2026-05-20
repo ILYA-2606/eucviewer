@@ -105,11 +105,15 @@
         (function(){
             function updatePageVersion() {
                 var d = new Date(document.lastModified);
-                var iso = isNaN(d.getTime())
+                var local = isNaN(d.getTime())
                     ? document.lastModified
-                    : d.toISOString().slice(0, 16).replace('T', ' ');
+                    : d.getFullYear() + '-' +
+                      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+                      String(d.getDate()).padStart(2, '0') + ' ' +
+                      String(d.getHours()).padStart(2, '0') + ':' +
+                      String(d.getMinutes()).padStart(2, '0');
                 var i18n = window.appI18n;
-                document.getElementById('page-version').textContent = i18n ? i18n.t('footer.build', { date: iso }) : 'build ' + iso;
+                document.getElementById('page-version').textContent = i18n ? i18n.t('footer.build', { date: local }) : 'build ' + local;
             }
             if (window.appI18n) window.appI18n.ready.then(updatePageVersion);
             else updatePageVersion();

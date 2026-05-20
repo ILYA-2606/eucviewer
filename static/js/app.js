@@ -5,6 +5,12 @@ document.addEventListener("DOMContentLoaded", async function () {
   }};
   await i18n.ready;
   const t = (key, params) => i18n.t(key, params);
+  const unitText = (item) => item?.unit || (item?.unitKey ? t(item.unitKey) : "");
+  const monthName = (monthIndex) => {
+    const lang = i18n.language || document.documentElement.lang || undefined;
+    const name = new Intl.DateTimeFormat(lang, { month: "long" }).format(new Date(2000, monthIndex, 1));
+    return name.charAt(0).toLocaleUpperCase(lang) + name.slice(1);
+  };
 
   // --- Map setup with multiple tile layers ---
   const standardLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
@@ -146,12 +152,12 @@ document.addEventListener("DOMContentLoaded", async function () {
   const PAINT_METRICS = {
     distance: { pointIdx: -1, labelKey: "metric.distance", unitKey: "unit.distance", invert: false },
     speed:    { pointIdx: 2, labelKey: "metric.speed", unitKey: "unit.speed", invert: false },
-    pwm:      { pointIdx: 7, labelKey: "metric.pwm", unitKey: "unit.percent", invert: false },
+    pwm:      { pointIdx: 7, labelKey: "metric.pwm", unit: "%", invert: false },
     power:    { pointIdx: 9, labelKey: "metric.power", unitKey: "unit.w", invert: false },
     current:  { pointIdx: 8, labelKey: "metric.current", unitKey: "unit.a", invert: false },
-    battery:  { pointIdx: 6, labelKey: "metric.battery", unitKey: "unit.percent", invert: true },
+    battery:  { pointIdx: 6, labelKey: "metric.battery", unit: "%", invert: true },
     voltage:  { pointIdx: 4, labelKey: "metric.voltage", unitKey: "unit.voltage", invert: true },
-    temp:     { pointIdx: 5, labelKey: "metric.temp", unitKey: "unit.temperature", invert: false },
+    temp:     { pointIdx: 5, labelKey: "metric.temp", unit: "\u00b0C", invert: false },
     altitude: { pointIdx: 3, labelKey: "metric.altitude", unitKey: "unit.altitude", invert: false },
   };
 
@@ -417,7 +423,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   const legendEl = document.getElementById("color-legend");
   function traceUnit(key) {
     const metric = PAINT_METRICS[key];
-    return metric?.unitKey ? t(metric.unitKey) : "";
+    return unitText(metric);
   }
   function legendGradientCss(key, invert) {
     if (key === "distance") {
@@ -514,7 +520,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (power)   html += `<br><i class="clr" style="background:#7c4dff"></i>${t("metric.power")}: <b>${power.toFixed(0)}</b> ${t("unit.w")}`;
     if (current) html += `<br><i class="clr" style="background:#ffd740"></i>${t("metric.current")}: <b>${current.toFixed(1)}</b> ${t("unit.a")}`;
     if (volt) html += `<br><i class="clr" style="background:#ff5252"></i>${t("metric.voltage")}: <b>${volt.toFixed(1)}</b> ${t("unit.voltage")}`;
-    if (temp) html += `<br><i class="clr" style="background:#ffa000"></i>${t("metric.temp")}: <b>${temp.toFixed(0)}</b> ${t("unit.temperature")}`;
+    if (temp) html += `<br><i class="clr" style="background:#ffa000"></i>${t("metric.temp")}: <b>${temp.toFixed(0)}</b> \u00b0C`;
     if (batt) html += `<br><i class="clr" style="background:#69f0ae"></i>${t("metric.battery")}: <b>${batt.toFixed(0)}</b>%`;
     if (alt)  html += `<br><i class="clr" style="background:#ce93d8"></i>${t("metric.altitude")}: <b>${alt.toFixed(0)}</b> ${t("unit.altitude")}`;
 
@@ -889,10 +895,11 @@ document.addEventListener("DOMContentLoaded", async function () {
       items.forEach((item) => {
         const row = document.createElement("div");
         row.className = "recent-file-item";
+        const meta = `${item.tripCount} ${tripsLabel(item.tripCount)} \u00b7 ${item.totalKm.toFixed(1)} ${t("unit.distance")} \u00b7 ${formatRecentTime(item.loadedAt)}`;
         row.innerHTML = `
           <button type="button" class="recent-file-load">
             <span class="recent-file-name">${escapeHtml(item.fileName)}</span>
-            <span class="recent-file-meta">${escapeHtml(t("recent.meta", { count: item.tripCount, trips: tripsLabel(item.tripCount), km: item.totalKm.toFixed(1), distanceUnit: t("unit.distance"), time: formatRecentTime(item.loadedAt) }))}</span>
+            <span class="recent-file-meta">${escapeHtml(meta)}</span>
           </button>
           <button type="button" class="recent-file-remove" title="${escapeHtml(t("recent.removeTitle"))}">&times;</button>
         `;
@@ -1236,18 +1243,18 @@ document.addEventListener("DOMContentLoaded", async function () {
     header.appendChild(allRow);
 
     // Group trips by year > month
-    const MONTH_NAMES = Array.from({ length: 12 }, (_, idx) => t(`month.${idx}`));
     const yearOrder = [];
     const yearMap = {};
     allTracks.forEach((track, i) => {
-      let year = t("month.unknown"), month = t("month.unknown");
+      let year = "\u2014", month = "\u2014";
       const ds = track.dateStart || "";
       if (ds) {
         const d = new Date(ds);
-        if (!isNaN(d)) { year = String(d.getFullYear()); month = MONTH_NAMES[d.getMonth()]; }
+        if (!isNaN(d)) { year = String(d.getFullYear()); month = monthName(d.getMonth()); }
       } else if (track.date) {
         const parts = track.date.split(".");
-        if (parts.length === 3) { year = parts[2]; month = MONTH_NAMES[parseInt(parts[1], 10) - 1]; }
+        const monthIndex = parseInt(parts[1], 10) - 1;
+        if (parts.length === 3 && monthIndex >= 0 && monthIndex < 12) { year = parts[2]; month = monthName(monthIndex); }
       }
       if (!yearMap[year]) { yearMap[year] = { year, monthOrder: [], monthMap: {} }; yearOrder.push(yearMap[year]); }
       const ym = yearMap[year];
@@ -1564,12 +1571,12 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   const SERIES = [
     { idx: 1, key: "speed",    labelKey: "metric.speed",   unitKey: "unit.speed" },
-    { idx: 9,  key: "pwm",      labelKey: "metric.pwm",     unitKey: "unit.percent" },
+    { idx: 9,  key: "pwm",      labelKey: "metric.pwm",     unit: "%" },
     { idx: 11, key: "power",    labelKey: "metric.power",   unitKey: "unit.w" },
     { idx: 10, key: "current",  labelKey: "metric.current", unitKey: "unit.a" },
     { idx: 2, key: "voltage",  labelKey: "metric.voltage", unitKey: "unit.voltage" },
-    { idx: 3, key: "temp",     labelKey: "metric.temp",    unitKey: "unit.temperature" },
-    { idx: 4, key: "battery",  labelKey: "metric.battery", unitKey: "unit.percent" },
+    { idx: 3, key: "temp",     labelKey: "metric.temp",    unit: "\u00b0C" },
+    { idx: 4, key: "battery",  labelKey: "metric.battery", unit: "%" },
     { idx: 5, key: "altitude", labelKey: "metric.altitude",     unitKey: "unit.altitude" },
   ];
 
@@ -1579,12 +1586,12 @@ document.addEventListener("DOMContentLoaded", async function () {
   const DETAIL_ROWS = [
     { key: "distance", labelKey: "metric.distance", color: "#66bb6a", unitKey: "unit.distance" },
     { key: "speed",    labelKey: "metric.speed",    color: "#00e5ff", idx: 1,  unitKey: "unit.speed", dp: 1 },
-    { key: "pwm",      labelKey: "metric.pwm",      color: "#ff4081", idx: 9,  unitKey: "unit.percent", dp: 1 },
+    { key: "pwm",      labelKey: "metric.pwm",      color: "#ff4081", idx: 9,  unit: "%", dp: 1 },
     { key: "power",    labelKey: "metric.power",    color: "#7c4dff", idx: 11, unitKey: "unit.w", dp: 0 },
     { key: "current",  labelKey: "metric.current",  color: "#ffd740", idx: 10, unitKey: "unit.a", dp: 1 },
     { key: "voltage",  labelKey: "metric.voltage",  color: "#ff5252", idx: 2,  unitKey: "unit.voltage", dp: 1 },
-    { key: "temp",     labelKey: "metric.temp",     color: "#ffa000", idx: 3,  unitKey: "unit.temperature", dp: 1 },
-    { key: "battery",  labelKey: "metric.battery",  color: "#69f0ae", idx: 4,  unitKey: "unit.percent", dp: 0 },
+    { key: "temp",     labelKey: "metric.temp",     color: "#ffa000", idx: 3,  unit: "\u00b0C", dp: 1 },
+    { key: "battery",  labelKey: "metric.battery",  color: "#69f0ae", idx: 4,  unit: "%", dp: 0 },
     { key: "altitude", labelKey: "metric.altitude", color: "#ce93d8", idx: 5,  unitKey: "unit.altitude", dp: 0 },
     { key: "time",     labelKey: "metric.time",     color: null },
   ];
@@ -1593,7 +1600,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   let liveDetailIdx = -1;
 
   function detailUnit(row) {
-    return row.unitKey ? t(row.unitKey) : (row.unit || "");
+    return unitText(row);
   }
 
   // Builds the detail rows for a trip — each shows a min–max range (total for
