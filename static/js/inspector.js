@@ -30,7 +30,7 @@
     return n === 1 ? tr("trip.samplesOne") : tr("trip.samplesMany");
   }
 
-  const RECENT_DB_NAME = "darknessbot-trip-viewer";
+  const RECENT_DB_NAME = "eucplanet-trip-viewer";
   const SESSION_STORE_NAME = "currentSession";
   const SESSION_KEY = "tracks";
 
@@ -79,7 +79,7 @@
   // Timeseries layout: [sec, speed, voltage, temp, battery, altitude, lat, lon, mileageKm, pwm, current, power]
   const SEC = 0, SPD = 1, VOLT = 2, TEMP = 3, BATT = 4, ALT = 5, LAT = 6, LON = 7, MILEAGE = 8;
   const PWM = 9, CURRENT = 10, POWER = 11;
-  // Points layout: [lat, lon, speed, alt, volt, temp, battery]
+  // Points layout: [lat, lon, speed, alt, volt, temp, battery, pwm, current, power]
   const P_LAT = 0, P_LON = 1, P_SPD = 2, P_ALT = 3, P_VOLT = 4, P_TEMP = 5, P_BATT = 6;
   const P_PWM = 7, P_CURRENT = 8, P_POWER = 9;
 
@@ -160,8 +160,12 @@
 
   const gpsPoints = ts.filter(hasGpsRow);
   let routePoints = Array.isArray(track.points) ? track.points.filter((p) => p[P_LAT] !== 0 && p[P_LON] !== 0) : [];
-  if (routePoints.length < 2) {
-    // Fallback for legacy payloads: reconstruct route from timeseries GPS rows.
+  const hasExtendedPointMetrics = routePoints.some((p) => (
+    typeof p[P_PWM] === "number" || typeof p[P_CURRENT] === "number" || typeof p[P_POWER] === "number"
+  ));
+  if (routePoints.length < 2 || (!hasExtendedPointMetrics && gpsPoints.length > 1)) {
+    // Fallback for legacy payloads: reconstruct route from timeseries GPS rows,
+    // including extended metrics used by trace colouring.
     routePoints = gpsPoints.map((r) => [r[LAT], r[LON], r[SPD], r[ALT], r[VOLT], r[TEMP], r[BATT], r[PWM], r[CURRENT], r[POWER]]);
   }
   const hasGps = routePoints.length > 1;
@@ -209,9 +213,9 @@
   // Color-by configs: invert=true means high value is "good" (green end of palette).
   const COLOR_MODES = {
     speed:    { pointIdx: P_SPD,  unitKey: "unit.speed", invert: false },
-    pwm:      { pointIdx: P_PWM,     unit: "%",    invert: false },
-    power:    { pointIdx: P_POWER,   unit: "unit.w",    invert: false },
-    current:  { pointIdx: P_CURRENT, unit: "unit.a",    invert: false },
+    pwm:      { pointIdx: P_PWM,     unitKey: "unit.percent", invert: false },
+    power:    { pointIdx: P_POWER,   unitKey: "unit.w", invert: false },
+    current:  { pointIdx: P_CURRENT, unitKey: "unit.a", invert: false },
     battery:  { pointIdx: P_BATT, unitKey: "unit.percent", invert: true  },
     voltage:  { pointIdx: P_VOLT, unitKey: "unit.voltage", invert: true  },
     temp:     { pointIdx: P_TEMP, unitKey: "unit.temperature", invert: false },
@@ -311,6 +315,7 @@
     let minV = Infinity, maxV = -Infinity;
     for (let i = 0; i <= end; i++) {
       const v = routePoints[i][cfg.pointIdx];
+      if (typeof v !== "number") continue;
       if (v < minV) minV = v;
       if (v > maxV) maxV = v;
     }
@@ -637,9 +642,9 @@
   // ---------- Charts ----------
   const CHART_CONFIG = {
     speed:    { color: "#00e5ff", idx: SPD,  unitKey: "unit.speed" },
-    pwm:      { color: "#ff4081", idx: PWM,     unit: " %" },
-    power:    { color: "#7c4dff", idx: POWER,   unit: "unit.w" },
-    current:  { color: "#ffd740", idx: CURRENT, unit: "unit.a" },
+    pwm:      { color: "#ff4081", idx: PWM, unitKey: "unit.percent" },
+    power:    { color: "#7c4dff", idx: POWER, unitKey: "unit.w" },
+    current:  { color: "#ffd740", idx: CURRENT, unitKey: "unit.a" },
     voltage:  { color: "#ff5252", idx: VOLT, unitKey: "unit.voltage" },
     temp:     { color: "#ffa000", idx: TEMP, unitKey: "unit.temperature" },
     battery:  { color: "#69f0ae", idx: BATT, unitKey: "unit.percent" },
@@ -891,7 +896,8 @@
     // Charts: update readings + cursors (cursor uses fractional index for smooth sweep)
     const fracIdx = currentSampleIdx + sampleFraction;
     charts.forEach(c => {
-      c.reading.textContent = sampleAt(c.cfg.idx).toFixed(1) + " " + tr(c.cfg.unitKey);
+      const decimals = c.key === "power" ? 0 : 1;
+      c.reading.textContent = sampleAt(c.cfg.idx).toFixed(decimals) + " " + tr(c.cfg.unitKey);
       drawChart(c, fracIdx);
     });
 
