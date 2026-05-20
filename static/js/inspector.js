@@ -1,6 +1,13 @@
 (async function () {
   "use strict";
 
+  const i18n = window.appI18n || { ready: Promise.resolve(), t: (key, params) => {
+    if (!params) return key;
+    return String(key).replace(/\{(\w+)\}/g, (_, name) => params[name] ?? "");
+  }};
+  await i18n.ready;
+  const tr = (key, params) => i18n.t(key, params);
+
   // ---------- Load track ----------
   const params = new URLSearchParams(location.search);
   const trackIdx = parseInt(params.get("i"));
@@ -9,6 +16,18 @@
   function showError(msg) {
     errorBanner.textContent = msg;
     errorBanner.classList.remove("hidden");
+  }
+
+  function samplesLabel(count) {
+    const n = Math.abs(Number(count) || 0);
+    if (i18n.language === "ru") {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return tr("trip.samplesOne");
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return tr("trip.samplesSome");
+      return tr("trip.samplesMany");
+    }
+    return n === 1 ? tr("trip.samplesOne") : tr("trip.samplesMany");
   }
 
   const RECENT_DB_NAME = "eucplanet-trip-viewer";
@@ -47,13 +66,13 @@
   }
 
   if (!tracks || !Array.isArray(tracks) || isNaN(trackIdx) || !tracks[trackIdx]) {
-    showError("Trip not found. Open the main viewer and click a trip's inspect button.");
+    showError(tr("inspector.tripNotFound"));
     return;
   }
   const track = tracks[trackIdx];
   const ts = track.timeseries || [];
   if (ts.length < 2) {
-    showError("Trip has no timeseries data to play back.");
+    showError(tr("inspector.noTimeseries"));
     return;
   }
 
@@ -115,9 +134,10 @@
   document.getElementById("trip-name").textContent = track.date || track.name;
   const subBits = [];
   if (track.stats) {
-    if (track.stats.distanceKm) subBits.push(track.stats.distanceKm + " km");
-    if (track.stats.maxSpeed) subBits.push(track.stats.maxSpeed + " km/h max");
-    subBits.push((track.stats.rows || ts.length).toLocaleString() + " samples");
+    if (track.stats.distanceKm) subBits.push(track.stats.distanceKm + " " + tr("unit.distance"));
+    if (track.stats.maxSpeed) subBits.push(track.stats.maxSpeed + " " + tr("unit.speed") + " " + tr("trip.max"));
+    const sampleCount = track.stats.rows || ts.length;
+    subBits.push(sampleCount.toLocaleString() + " " + samplesLabel(sampleCount));
   }
   document.getElementById("trip-subtitle").textContent = subBits.join(" \u00b7 ");
   document.getElementById("odo-total").textContent = totalKm.toFixed(2);
@@ -186,11 +206,11 @@
 
   // Color-by configs: invert=true means high value is "good" (green end of palette).
   const COLOR_MODES = {
-    speed:    { pointIdx: P_SPD,  unit: "km/h", invert: false },
-    battery:  { pointIdx: P_BATT, unit: "%",    invert: true  },
-    voltage:  { pointIdx: P_VOLT, unit: "V",    invert: true  },
-    temp:     { pointIdx: P_TEMP, unit: "\u00b0C", invert: false },
-    altitude: { pointIdx: P_ALT,  unit: "m",    invert: false }
+    speed:    { pointIdx: P_SPD,  unitKey: "unit.speed", invert: false },
+    battery:  { pointIdx: P_BATT, unitKey: "unit.percent", invert: true  },
+    voltage:  { pointIdx: P_VOLT, unitKey: "unit.voltage", invert: true  },
+    temp:     { pointIdx: P_TEMP, unitKey: "unit.temperature", invert: false },
+    altitude: { pointIdx: P_ALT,  unitKey: "unit.altitude", invert: false }
   };
   // Palette low → high; inverted modes reverse stops.
   const PALETTE = ["#2962ff", "#00e5ff", "#69f0ae", "#ffeb3b", "#ff5252"];
@@ -311,7 +331,7 @@
     if (lastP < 1) {
       expr.push(1, colorAt(vals[lastIdx]));
     }
-    return { expr, min: minV, max: maxV, invert: cfg.invert, unit: cfg.unit };
+    return { expr, min: minV, max: maxV, invert: cfg.invert, unit: tr(cfg.unitKey) };
   }
 
   function metricColor(value, minV, maxV, invert) {
@@ -335,7 +355,7 @@
     }
     if (!isFinite(minV) || !isFinite(maxV)) return null;
     if (minV === maxV) maxV = minV + 1;
-    return { min: minV, max: maxV, invert: cfg.invert, unit: cfg.unit };
+    return { min: minV, max: maxV, invert: cfg.invert, unit: tr(cfg.unitKey) };
   }
 
   function buildTraveledGradientExpr(mode, routeIdx) {
@@ -553,16 +573,16 @@
     });
   } else {
     document.getElementById("map").innerHTML =
-      '<div style="padding:40px;color:#888;text-align:center;">No GPS data for this trip.</div>';
+      `<div style="padding:40px;color:#888;text-align:center;">${tr("inspector.noGps")}</div>`;
   }
 
   // ---------- Charts ----------
   const CHART_CONFIG = {
-    speed:    { color: "#00e5ff", idx: SPD,  unit: " km/h" },
-    voltage:  { color: "#ff5252", idx: VOLT, unit: " V" },
-    temp:     { color: "#ffa000", idx: TEMP, unit: " \u00b0C" },
-    battery:  { color: "#69f0ae", idx: BATT, unit: " %" },
-    altitude: { color: "#ce93d8", idx: ALT,  unit: " m" },
+    speed:    { color: "#00e5ff", idx: SPD,  unitKey: "unit.speed" },
+    voltage:  { color: "#ff5252", idx: VOLT, unitKey: "unit.voltage" },
+    temp:     { color: "#ffa000", idx: TEMP, unitKey: "unit.temperature" },
+    battery:  { color: "#69f0ae", idx: BATT, unitKey: "unit.percent" },
+    altitude: { color: "#ce93d8", idx: ALT,  unitKey: "unit.altitude" },
   };
 
   const chartBlocks = document.querySelectorAll(".chart-block");
@@ -710,7 +730,7 @@
     const themeSel = document.getElementById("theme-select");
     if (themeSel) {
       themeSel.disabled = playing;
-      themeSel.title = playing ? "Pause to change map style" : "";
+      themeSel.title = playing ? tr("inspector.pauseToChangeMapStyle") : "";
     }
   }
 
@@ -794,7 +814,7 @@
     // Charts: update readings + cursors (cursor uses fractional index for smooth sweep)
     const fracIdx = currentSampleIdx + sampleFraction;
     charts.forEach(c => {
-      c.reading.textContent = sampleAt(c.cfg.idx).toFixed(1) + c.cfg.unit;
+      c.reading.textContent = sampleAt(c.cfg.idx).toFixed(1) + " " + tr(c.cfg.unitKey);
       drawChart(c, fracIdx);
     });
 

@@ -6,12 +6,20 @@
     <title>EUC Planet Trip Viewer</title>
     <link rel="icon" href="static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<<<<<<< HEAD
     <link rel="stylesheet" href="static/css/style.css?v=20" />
+=======
+    <link rel="stylesheet" href="static/css/style.css?v=24" />
+>>>>>>> main
 </head>
 <body>
     <div id="map"></div>
 
     <div id="upload-overlay">
+        <div id="language-switcher" aria-label="Language" data-i18n-aria-label="language.switcherLabel">
+            <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
+            <button type="button" data-lang-option="ru" aria-pressed="false">RU</button>
+        </div>
         <div id="upload-box">
             <img id="upload-icon" src="static/favicon.svg" alt="" />
             <h1><a id="app-link" href="https://eucplanet.ried.no/" target="_blank" rel="noopener"><strong>EUC Planet</strong></a> Trip Viewer</h1>
@@ -20,7 +28,7 @@
                 <p class="upload-hint-aside">Exports from other apps like DarknessBot also work.</p>
             </div>
             <label id="upload-label" for="file-input">
-                .dbb / .csv file
+                <span data-i18n="upload.fileButton">.dbb / .csv file</span>
                 <input type="file" id="file-input" accept=".dbb,.csv" />
             </label>
             <div id="progress-area" class="hidden">
@@ -31,7 +39,7 @@
     </div>
 
     <div id="trip-panel" class="hidden">
-        <div id="panel-tab"><span id="panel-tab-text">Trip Explorer</span></div>
+        <div id="panel-tab"><span id="panel-tab-text" data-i18n="panel.tripExplorer">Trip Explorer</span></div>
         <div id="panel-body">
             <div id="panel-header"></div>
             <div id="trip-detail" class="hidden"></div>
@@ -47,20 +55,38 @@
             </svg>
             <span>GitHub</span>
         </a>
-        <span id="page-version" title="HTML last-modified date (auto-updated on deploy)"></span>
+        <span id="page-version" title="HTML last-modified date (auto-updated on deploy)" data-i18n-title="footer.buildTitle"></span>
     </div>
     <script>
         (function(){
-            var d = new Date(document.lastModified);
-            var iso = isNaN(d.getTime())
-                ? document.lastModified
-                : d.toISOString().slice(0, 16).replace('T', ' ');
-            document.getElementById('page-version').textContent = 'build ' + iso;
+            function updatePageVersion() {
+                var d = new Date(document.lastModified);
+                var iso = isNaN(d.getTime())
+                    ? document.lastModified
+                    : d.toISOString().slice(0, 16).replace('T', ' ');
+                var i18n = window.appI18n;
+                document.getElementById('page-version').textContent = i18n ? i18n.t('footer.build', { date: iso }) : 'build ' + iso;
+            }
+            if (window.appI18n) window.appI18n.ready.then(updatePageVersion);
+            else updatePageVersion();
+            window.addEventListener('i18n:change', updatePageVersion);
+        })();
+        (function(){
+            function updateAppLink() {
+                var appLink = document.getElementById('app-link');
+                var i18n = window.appI18n;
+                appLink.href = i18n && i18n.language === 'ru'
+                    ? 'https://darknessproduction.com/#darknessbot'
+                    : 'https://darknessproduction.com/en/#darknessbot';
+            }
+            if (window.appI18n) window.appI18n.ready.then(updateAppLink);
+            else updateAppLink();
+            window.addEventListener('i18n:change', updateAppLink);
         })();
     </script>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="static/js/app.js?v=30"></script>
+    <script src="static/js/app.js?v=35"></script>
 </body>
 </html>
