@@ -687,10 +687,10 @@ document.addEventListener("DOMContentLoaded", async function () {
     section.className = "hidden";
     section.innerHTML = `
       <div class="recent-files-header">
-        <span>${t("recent.title")}</span>
-        <button type="button" class="recent-clear hidden">${t("recent.clear")}</button>
+        <span data-i18n="recent.title">${t("recent.title")}</span>
+        <button type="button" class="recent-clear hidden" data-i18n="recent.clear">${t("recent.clear")}</button>
       </div>
-      <div class="recent-files-empty">${t("recent.empty")}</div>
+      <div class="recent-files-empty" data-i18n="recent.empty">${t("recent.empty")}</div>
       <div class="recent-files-list hidden"></div>
     `;
     uploadBox.appendChild(section);
@@ -877,6 +877,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   async function renderRecentFiles() {
     try {
       const items = await getRecentFiles();
+      i18n.applyStaticTranslations(recentUi.section);
       recentUi.list.innerHTML = "";
 
       if (!items.length) {
