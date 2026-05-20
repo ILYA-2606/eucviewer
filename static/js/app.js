@@ -1,6 +1,9 @@
 document.addEventListener("DOMContentLoaded", function () {
   // --- Map setup with multiple tile layers ---
-  const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  const standardLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+  });
+  const darkLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
   });
   const satelliteLayer = L.tileLayer(
@@ -10,6 +13,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const topoLayer = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
     maxZoom: 17,
   });
+  let glowLayer;
 
   const map = L.map("map", {
     center: [65, 15],
@@ -17,21 +21,21 @@ document.addEventListener("DOMContentLoaded", function () {
     zoomControl: false,
     preferCanvas: true,
     zoomSnap: 1,
-    layers: [osmLayer],
+    layers: [standardLayer],
   });
 
-  map.getContainer().classList.add("dark-tiles");
   map.on("baselayerchange", function (e) {
-    if (e.name === "Satellite") {
-      map.getContainer().classList.remove("dark-tiles");
-    } else {
+    if (e.name === "Dark") {
       map.getContainer().classList.add("dark-tiles");
+    } else {
+      map.getContainer().classList.remove("dark-tiles");
     }
+    if (glowLayer) glowLayer.redraw();
   });
 
   L.control.zoom({ position: "bottomleft" }).addTo(map);
   L.control.layers(
-    { "Dark": osmLayer, "Satellite": satelliteLayer, "Topo": topoLayer },
+    { "Standard": standardLayer, "Dark": darkLayer, "Satellite": satelliteLayer, "Topo": topoLayer },
     null,
     { position: "bottomleft" }
   ).addTo(map);
@@ -141,6 +145,7 @@ document.addEventListener("DOMContentLoaded", function () {
       this._visible = vis;
       this._draw();
     },
+    redraw() { this._draw(); },
     _onViewChange() { this._draw(); },
     _draw() {
       if (!this._map) return;
@@ -174,6 +179,13 @@ document.addEventListener("DOMContentLoaded", function () {
         { width: 7,  alpha: 0.2,  color: "255,180,30" },
         { width: 4,  alpha: 0.5,  color: "255,200,50" },
         { width: 2,  alpha: 0.9,  color: "255,240,180" },
+      ];
+      const fuchsiaPasses = [
+        { width: 16, alpha: 0.08, color: "230, 0, 126" },
+        { width: 10, alpha: 0.16, color: "230, 0, 126" },
+        { width: 6,  alpha: 0.35, color: "230, 0, 126" },
+        { width: 3,  alpha: 0.65, color: "230, 0, 126" },
+        { width: 2,  alpha: 0.95, color: "230, 0, 126" },
       ];
 
       const basePasses = cyanPasses.map((p) => ({
@@ -236,12 +248,14 @@ document.addEventListener("DOMContentLoaded", function () {
               }
             }
           } else {
-            for (const pass of orangePasses) {
+            const isLightMap = map.hasLayer(standardLayer) || map.hasLayer(topoLayer);
+            const selectedPasses = isLightMap ? fuchsiaPasses : orangePasses;
+            for (const pass of selectedPasses) {
               ctx.strokeStyle = `rgba(${pass.color},${pass.alpha})`;
               ctx.lineWidth = pass.width;
               ctx.lineJoin = "round";
               ctx.lineCap = "round";
-              ctx.globalCompositeOperation = pass.width <= 4 ? "source-over" : "lighter";
+              ctx.globalCompositeOperation = isLightMap || pass.width <= 4 ? "source-over" : "lighter";
               drawTrack(lls);
             }
           }
@@ -250,7 +264,7 @@ document.addEventListener("DOMContentLoaded", function () {
     },
   });
 
-  const glowLayer = new GlowLayer();
+  glowLayer = new GlowLayer();
   glowLayer.addTo(map);
 
   function updateGlow() {
