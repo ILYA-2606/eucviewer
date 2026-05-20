@@ -51,6 +51,40 @@ body, html {
 }
 #upload-overlay.hidden { display: none; }
 
+#language-switcher {
+    position: absolute;
+    top: 14px;
+    right: 14px;
+    z-index: 2;
+    display: inline-flex;
+    gap: 2px;
+    padding: 3px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(0, 229, 255, 0.18);
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+}
+#language-switcher button {
+    min-width: 38px;
+    height: 28px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: rgba(224, 224, 224, 0.72);
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 700;
+    cursor: pointer;
+}
+#language-switcher button:hover {
+    color: #fff;
+    background: rgba(0, 229, 255, 0.08);
+}
+#language-switcher button.active {
+    color: #000;
+    background: #00e5ff;
+}
+
 #upload-box {
     text-align: center;
     color: #e0e0e0;
@@ -60,6 +94,7 @@ body, html {
 #upload-icon { width: 5rem; height: 5rem; margin: 0 auto 1rem; display: block; }
 #upload-box h1 { font-size: 1.6rem; margin-bottom: 0.5rem; color: #fff; font-weight: 300; text-align: center; line-height: 1.4; }
 #upload-box h1 strong { font-weight: 700; }
+#app-heading-suffix { display: block; }
 #app-link { color: #fff; text-decoration: none; }
 #app-link:hover { color: #00e5ff; }
 
@@ -86,6 +121,78 @@ body, html {
 }
 #upload-label:hover { background: #00b8d4; }
 #upload-label input { display: none; }
+
+#about-button {
+    display: block;
+    margin: 0.85rem auto 0;
+    border: 1px solid rgba(0, 229, 255, 0.22);
+    background: rgba(255, 255, 255, 0.04);
+    color: #00e5ff;
+    border-radius: 8px;
+    padding: 0.55rem 1.25rem;
+    font: inherit;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+#about-button:hover {
+    background: rgba(0, 229, 255, 0.08);
+    border-color: rgba(0, 229, 255, 0.45);
+    color: #fff;
+}
+
+#about-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+    background: rgba(0, 0, 0, 0.58);
+    backdrop-filter: blur(10px);
+}
+#about-card {
+    position: relative;
+    width: min(420px, 100%);
+    padding: 1.5rem;
+    color: #dfe9ed;
+    background: rgba(16, 20, 22, 0.94);
+    border: 1px solid rgba(0, 229, 255, 0.22);
+    border-radius: 8px;
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+#about-card h2 {
+    margin: 0 2rem 0.85rem 0;
+    color: #fff;
+    font-size: 1.25rem;
+}
+#about-card p {
+    margin: 0.7rem 0 0;
+    color: rgba(223, 233, 237, 0.78);
+    font-size: 0.9rem;
+    line-height: 1.5;
+}
+#about-card a { color: #00e5ff; }
+#about-close {
+    position: absolute;
+    top: 0.7rem;
+    right: 0.7rem;
+    width: 2rem;
+    height: 2rem;
+    border: 1px solid rgba(0, 229, 255, 0.18);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    color: #dfe9ed;
+    font-size: 1.35rem;
+    line-height: 1;
+    cursor: pointer;
+}
+#about-close:hover {
+    background: rgba(0, 229, 255, 0.08);
+    color: #fff;
+}
 
 /* Progress */
 #progress-area { margin-top: 1.5rem; }
@@ -253,7 +360,7 @@ body, html {
     backdrop-filter: blur(12px);
     transition: background 0.2s;
 }
-#panel-tab:hover { background: rgba(0, 229, 255, 0.08); }
+#panel-tab:hover { background: rgba(10, 10, 15, 0.78); }
 
 #panel-tab-text {
     writing-mode: vertical-rl;

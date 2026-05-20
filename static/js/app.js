@@ -1,6 +1,16 @@
-document.addEventListener("DOMContentLoaded", function () {
+document.addEventListener("DOMContentLoaded", async function () {
+  const i18n = window.appI18n || { ready: Promise.resolve(), t: (key, params) => {
+    if (!params) return key;
+    return String(key).replace(/\{(\w+)\}/g, (_, name) => params[name] ?? "");
+  }};
+  await i18n.ready;
+  const t = (key, params) => i18n.t(key, params);
+
   // --- Map setup with multiple tile layers ---
-  const osmLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  const standardLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 19,
+  });
+  const darkLayer = L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
   });
   const satelliteLayer = L.tileLayer(
@@ -10,6 +20,22 @@ document.addEventListener("DOMContentLoaded", function () {
   const topoLayer = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
     maxZoom: 17,
   });
+  const MAP_LAYER_KEY = "dbb_map_layer";
+  const baseLayerDefs = {
+    standard: { layer: standardLayer, labelKey: "map.standard" },
+    dark: { layer: darkLayer, labelKey: "map.dark" },
+    satellite: { layer: satelliteLayer, labelKey: "map.satellite" },
+    topo: { layer: topoLayer, labelKey: "map.topo" },
+  };
+  const legacyBaseLayerIds = { "Standard": "standard", "Dark": "dark", "Satellite": "satellite", "Topo": "topo" };
+  let selectedBaseLayerId = "standard";
+  try {
+    const savedLayerId = localStorage.getItem(MAP_LAYER_KEY);
+    if (savedLayerId && baseLayerDefs[savedLayerId]) selectedBaseLayerId = savedLayerId;
+    else if (savedLayerId && legacyBaseLayerIds[savedLayerId]) selectedBaseLayerId = legacyBaseLayerIds[savedLayerId];
+  } catch (_) {}
+  let glowLayer;
+  let layerControl;
 
   const map = L.map("map", {
     center: [65, 15],
@@ -17,24 +43,36 @@ document.addEventListener("DOMContentLoaded", function () {
     zoomControl: false,
     preferCanvas: true,
     zoomSnap: 1,
-    layers: [osmLayer],
+    layers: [baseLayerDefs[selectedBaseLayerId].layer],
   });
+  map.getContainer().classList.toggle("dark-tiles", selectedBaseLayerId === "dark");
 
-  map.getContainer().classList.add("dark-tiles");
-  map.on("baselayerchange", function (e) {
-    if (e.name === "Satellite") {
-      map.getContainer().classList.remove("dark-tiles");
-    } else {
-      map.getContainer().classList.add("dark-tiles");
+  function getBaseLayerId(layer) {
+    return Object.keys(baseLayerDefs).find((id) => baseLayerDefs[id].layer === layer) || selectedBaseLayerId;
+  }
+
+  function rebuildLayerControl() {
+    if (layerControl) map.removeControl(layerControl);
+    const localizedLayers = {};
+    for (const id of ["standard", "dark", "satellite", "topo"]) {
+      localizedLayers[t(baseLayerDefs[id].labelKey)] = baseLayerDefs[id].layer;
     }
+    layerControl = L.control.layers(localizedLayers, null, { position: "bottomleft" }).addTo(map);
+  }
+
+  map.on("baselayerchange", function (e) {
+    selectedBaseLayerId = getBaseLayerId(e.layer);
+    try { localStorage.setItem(MAP_LAYER_KEY, selectedBaseLayerId); } catch (_) {}
+    if (selectedBaseLayerId === "dark") {
+      map.getContainer().classList.add("dark-tiles");
+    } else {
+      map.getContainer().classList.remove("dark-tiles");
+    }
+    if (glowLayer) glowLayer.redraw();
   });
 
   L.control.zoom({ position: "bottomleft" }).addTo(map);
-  L.control.layers(
-    { "Dark": osmLayer, "Satellite": satelliteLayer, "Topo": topoLayer },
-    null,
-    { position: "bottomleft" }
-  ).addTo(map);
+  rebuildLayerControl();
 
   // --- State ---
   let allTracks = [];
@@ -102,11 +140,11 @@ document.addEventListener("DOMContentLoaded", function () {
   }
 
   const PAINT_METRICS = {
-    distance: { pointIdx: -1, label: "Distance" },
-    speed:    { pointIdx: 2, label: "Speed" },
-    voltage:  { pointIdx: 4, label: "Voltage" },
-    temp:     { pointIdx: 5, label: "Temp" },
-    altitude: { pointIdx: 3, label: "Altitude" },
+    distance: { pointIdx: -1, labelKey: "metric.distance" },
+    speed:    { pointIdx: 2, labelKey: "metric.speed" },
+    voltage:  { pointIdx: 4, labelKey: "metric.voltage" },
+    temp:     { pointIdx: 5, labelKey: "metric.temp" },
+    altitude: { pointIdx: 3, labelKey: "metric.altitude" },
   };
 
   // --- Glow canvas overlay ---
@@ -141,6 +179,7 @@ document.addEventListener("DOMContentLoaded", function () {
       this._visible = vis;
       this._draw();
     },
+    redraw() { this._draw(); },
     _onViewChange() { this._draw(); },
     _draw() {
       if (!this._map) return;
@@ -175,8 +214,24 @@ document.addEventListener("DOMContentLoaded", function () {
         { width: 4,  alpha: 0.5,  color: "255,200,50" },
         { width: 2,  alpha: 0.9,  color: "255,240,180" },
       ];
+      const fuchsiaAlphaPasses = [
+        { width: 16, alpha: 0.02, color: "230, 0, 126" },
+        { width: 10, alpha: 0.04, color: "230, 0, 126" },
+        { width: 6,  alpha: 0.08, color: "230, 0, 126" },
+        { width: 3,  alpha: 0.16, color: "230, 0, 126" },
+        { width: 2,  alpha: 0.3, color: "230, 0, 126" },
+      ];
+      const fuchsiaPasses = [
+        { width: 16, alpha: 0.08, color: "230, 0, 126" },
+        { width: 10, alpha: 0.16, color: "230, 0, 126" },
+        { width: 6,  alpha: 0.35, color: "230, 0, 126" },
+        { width: 3,  alpha: 0.65, color: "230, 0, 126" },
+        { width: 2,  alpha: 0.95, color: "230, 0, 126" },
+      ];
 
-      const basePasses = cyanPasses.map((p) => ({
+      const isLightMap = map.hasLayer(standardLayer) || map.hasLayer(topoLayer);
+      const basePassSource = isLightMap ? fuchsiaAlphaPasses : cyanPasses;
+      const basePasses = basePassSource.map((p) => ({
         ...p, alpha: sel >= 0 ? p.alpha * 0.3 : p.alpha,
       }));
 
@@ -236,12 +291,13 @@ document.addEventListener("DOMContentLoaded", function () {
               }
             }
           } else {
-            for (const pass of orangePasses) {
+            const selectedPasses = isLightMap ? fuchsiaPasses : orangePasses;
+            for (const pass of selectedPasses) {
               ctx.strokeStyle = `rgba(${pass.color},${pass.alpha})`;
               ctx.lineWidth = pass.width;
               ctx.lineJoin = "round";
               ctx.lineCap = "round";
-              ctx.globalCompositeOperation = pass.width <= 4 ? "source-over" : "lighter";
+              ctx.globalCompositeOperation = isLightMap || pass.width <= 4 ? "source-over" : "lighter";
               drawTrack(lls);
             }
           }
@@ -250,7 +306,7 @@ document.addEventListener("DOMContentLoaded", function () {
     },
   });
 
-  const glowLayer = new GlowLayer();
+  glowLayer = new GlowLayer();
   glowLayer.addTo(map);
 
   function updateGlow() {
@@ -333,12 +389,12 @@ document.addEventListener("DOMContentLoaded", function () {
     const batt = bestPt[6] || 0;
     const cumKm = getCumDistPts(allTracks[selectedIdx])[bestIdx] || 0;
 
-    let html = `<i class="clr" style="background:${"#66bb6a"}"></i>Dist: <b>${cumKm.toFixed(2)}</b> km`;
-    html += `<br><i class="clr" style="background:#00e5ff"></i>Speed: <b>${speed.toFixed(1)}</b> km/h`;
-    if (volt) html += `<br><i class="clr" style="background:#ff5252"></i>Voltage: <b>${volt.toFixed(1)}</b> V`;
-    if (temp) html += `<br><i class="clr" style="background:#ffa000"></i>Temp: <b>${temp.toFixed(0)}</b> &deg;C`;
-    if (batt) html += `<br><i class="clr" style="background:#69f0ae"></i>Battery: <b>${batt.toFixed(0)}</b>%`;
-    if (alt)  html += `<br><i class="clr" style="background:#ce93d8"></i>Alt: <b>${alt.toFixed(0)}</b> m`;
+    let html = `<i class="clr" style="background:${"#66bb6a"}"></i>${t("metric.distance")}: <b>${cumKm.toFixed(2)}</b> ${t("unit.distance")}`;
+    html += `<br><i class="clr" style="background:#00e5ff"></i>${t("metric.speed")}: <b>${speed.toFixed(1)}</b> ${t("unit.speed")}`;
+    if (volt) html += `<br><i class="clr" style="background:#ff5252"></i>${t("metric.voltage")}: <b>${volt.toFixed(1)}</b> ${t("unit.voltage")}`;
+    if (temp) html += `<br><i class="clr" style="background:#ffa000"></i>${t("metric.temp")}: <b>${temp.toFixed(0)}</b> ${t("unit.temperature")}`;
+    if (batt) html += `<br><i class="clr" style="background:#69f0ae"></i>${t("metric.battery")}: <b>${batt.toFixed(0)}</b>%`;
+    if (alt)  html += `<br><i class="clr" style="background:#ce93d8"></i>${t("metric.alt")}: <b>${alt.toFixed(0)}</b> ${t("unit.altitude")}`;
 
     tooltip.innerHTML = html;
     tooltip.style.left = (e.clientX + 14) + "px";
@@ -380,10 +436,10 @@ document.addEventListener("DOMContentLoaded", function () {
     }
 
     let popupHtml = '<div class="track-popup">';
-    for (const t of nearTracks) {
-      const tr = allTracks[t];
-      const label = tr.date || tr.name;
-      popupHtml += `<div class="track-popup-item" data-tidx="${t}">${label} <span>${tr.stats.distanceKm} km</span></div>`;
+    for (const trackIndex of nearTracks) {
+      const track = allTracks[trackIndex];
+      const label = track.date || track.name;
+      popupHtml += `<div class="track-popup-item" data-tidx="${trackIndex}">${label} <span>${track.stats.distanceKm} ${t("unit.distance")}</span></div>`;
     }
     popupHtml += "</div>";
 
@@ -438,7 +494,7 @@ document.addEventListener("DOMContentLoaded", function () {
   const tripList = document.getElementById("trip-list");
   const tripDetail = document.getElementById("trip-detail");
   const parserWorker = createParserWorker();
-  const RECENT_DB_NAME = "eucplanet-trip-viewer";
+  const RECENT_DB_NAME = "darknessbot-trip-viewer";
   const RECENT_STORE_NAME = "recentFiles";
   const SESSION_STORE_NAME = "currentSession";
   const SESSION_KEY = "tracks";
@@ -467,19 +523,19 @@ document.addEventListener("DOMContentLoaded", function () {
       progressArea.classList.remove("hidden");
       progressFill.style.width = "0%";
     }
-    setProgress("Loading...");
+    setProgress(t("progress.loading"));
 
     try {
       const parsedTracks = await parseFileLocally(parserWorker, file, (msg) => {
         if (msg.type === "progress") {
           const pct = Math.round((msg.current / msg.total) * 100);
           if (!append) progressFill.style.width = pct + "%";
-          setProgress(`Parsing trip ${msg.current} of ${msg.total}`);
+          setProgress(t("progress.parsing", { current: msg.current, total: msg.total }));
         }
       });
 
       if (!parsedTracks.length) {
-        setProgress("No trip data found in file", true);
+        setProgress(t("progress.noTripDataFile"), true);
         if (!append) uploadLabel.classList.remove("hidden");
         return;
       }
@@ -488,7 +544,7 @@ document.addEventListener("DOMContentLoaded", function () {
       loadTracks(append ? [...allTracks, ...parsedTracks] : parsedTracks);
       saveTracks(allTracks);
     } catch (e) {
-      setProgress("Error: " + e.message, true);
+      setProgress(t("progress.error", { message: e.message }), true);
       if (!append) uploadLabel.classList.remove("hidden");
     }
   }
@@ -503,10 +559,10 @@ document.addEventListener("DOMContentLoaded", function () {
     section.className = "hidden";
     section.innerHTML = `
       <div class="recent-files-header">
-        <span>Recent files</span>
-        <button type="button" class="recent-clear hidden">Clear</button>
+        <span>${t("recent.title")}</span>
+        <button type="button" class="recent-clear hidden">${t("recent.clear")}</button>
       </div>
-      <div class="recent-files-empty">No recent parsed files yet.</div>
+      <div class="recent-files-empty">${t("recent.empty")}</div>
       <div class="recent-files-list hidden"></div>
     `;
     uploadBox.appendChild(section);
@@ -546,13 +602,13 @@ document.addEventListener("DOMContentLoaded", function () {
 
         if (msg.type === "error") {
           cleanup();
-          reject(new Error(msg.error || "Failed to parse file"));
+          reject(new Error(msg.error || t("error.parseFile")));
         }
       };
 
       const handleError = (event) => {
         cleanup();
-        reject(new Error(event.message || "Failed to parse file"));
+        reject(new Error(event.message || t("error.parseFile")));
       };
 
       function cleanup() {
@@ -714,9 +770,9 @@ document.addEventListener("DOMContentLoaded", function () {
         row.innerHTML = `
           <button type="button" class="recent-file-load">
             <span class="recent-file-name">${escapeHtml(item.fileName)}</span>
-            <span class="recent-file-meta">${item.tripCount} trips &middot; ${item.totalKm.toFixed(1)} km &middot; ${escapeHtml(formatRecentTime(item.loadedAt))}</span>
+            <span class="recent-file-meta">${escapeHtml(t("recent.meta", { count: item.tripCount, trips: tripsLabel(item.tripCount), km: item.totalKm.toFixed(1), distanceUnit: t("unit.distance"), time: formatRecentTime(item.loadedAt) }))}</span>
           </button>
-          <button type="button" class="recent-file-remove" title="Remove from recent">&times;</button>
+          <button type="button" class="recent-file-remove" title="${escapeHtml(t("recent.removeTitle"))}">&times;</button>
         `;
 
         row.querySelector(".recent-file-load").addEventListener("click", () => {
@@ -740,6 +796,26 @@ document.addEventListener("DOMContentLoaded", function () {
       .replace(/>/g, "&gt;")
       .replace(/\"/g, "&quot;")
       .replace(/'/g, "&#39;");
+  }
+
+  function tripsLabel(count) {
+    return pluralLabel(count, "summary.trips");
+  }
+
+  function samplesLabel(count) {
+    return pluralLabel(count, "trip.samples");
+  }
+
+  function pluralLabel(count, keyPrefix) {
+    const n = Math.abs(Number(count) || 0);
+    if (i18n.language === "ru") {
+      const mod10 = n % 10;
+      const mod100 = n % 100;
+      if (mod10 === 1 && mod100 !== 11) return t(`${keyPrefix}One`);
+      if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return t(`${keyPrefix}Some`);
+      return t(`${keyPrefix}Many`);
+    }
+    return n === 1 ? t(`${keyPrefix}One`) : t(`${keyPrefix}Many`);
   }
 
   // --- Storage cache (IndexedDB primary, localStorage fallback) ---
@@ -852,7 +928,7 @@ document.addEventListener("DOMContentLoaded", function () {
     updateGlow();
     fitAll();
 
-    panelTabText.textContent = `Trip Explorer (${tracks.length})`;
+    panelTabText.textContent = t("panel.tripExplorerAll", { total: tracks.length });
     buildTripList();
 
     if (!skipNav) navigate("#view", false);
@@ -917,11 +993,11 @@ document.addEventListener("DOMContentLoaded", function () {
     // Update panel tab text based on selection state
     if (total > 0) {
       if (checked === 0) {
-        panelTabText.textContent = `Trip Explorer (${total} trips parsed)`;
+        panelTabText.textContent = t("panel.tripExplorerParsed", { total });
       } else if (checked === total) {
-        panelTabText.textContent = `Trip Explorer (${total} trips)`;
+        panelTabText.textContent = t("panel.tripExplorerAll", { total });
       } else {
-        panelTabText.textContent = `Trip Explorer (${checked} displayed of ${total} trips)`;
+        panelTabText.textContent = t("panel.tripExplorerDisplayed", { checked, total });
       }
     }
     const footer = document.getElementById("panel-footer");
@@ -929,7 +1005,7 @@ document.addEventListener("DOMContentLoaded", function () {
     const exportBtn = footer.querySelector(".export-btn");
     if (exportBtn) {
       const n = trackVisible.size;
-      exportBtn.textContent = n > 0 ? `Export selected (${n})` : "Export selected";
+      exportBtn.textContent = n > 0 ? t("footer.exportSelectedCount", { count: n }) : t("footer.exportSelected");
       exportBtn.style.opacity = n > 0 ? "" : "0.3";
     }
     // Update selected summary — hide if all or none selected
@@ -943,23 +1019,23 @@ document.addEventListener("DOMContentLoaded", function () {
         selSummary.classList.remove("hidden");
         let selKm = 0, selSec = 0, selTop = 0;
         for (const i of trackVisible) {
-          const t = allTracks[i];
-          if (!t) continue;
-          selKm += t.stats.distanceKm;
-          if (t.stats.maxSpeed > selTop) selTop = t.stats.maxSpeed;
-          if (t.dateStart && t.dateEnd) {
-            const s = new Date(t.dateStart).getTime();
-            const e = new Date(t.dateEnd).getTime();
+          const track = allTracks[i];
+          if (!track) continue;
+          selKm += track.stats.distanceKm;
+          if (track.stats.maxSpeed > selTop) selTop = track.stats.maxSpeed;
+          if (track.dateStart && track.dateEnd) {
+            const s = new Date(track.dateStart).getTime();
+            const e = new Date(track.dateEnd).getTime();
             if (s && e && e > s) selSec += (e - s) / 1000;
           }
         }
         const hrs = Math.floor(selSec / 3600);
         const mins = Math.round((selSec % 3600) / 60);
         selSummary.innerHTML = `
-          <div class="summary-row"><span>${selCount}</span> trips</div>
-          <div class="summary-row"><span>${selKm.toFixed(1)}</span> km</div>
-          <div class="summary-row"><span>${hrs}h ${mins}m</span> riding</div>
-          <div class="summary-row"><span>${selTop}</span> km/h top</div>
+          <div class="summary-row"><span>${selCount}</span> ${tripsLabel(selCount)}</div>
+          <div class="summary-row"><span>${selKm.toFixed(1)}</span> ${t("unit.distance")}</div>
+          <div class="summary-row"><span>${t("duration.hm", { hours: hrs, minutes: mins })}</span> ${t("summary.riding")}</div>
+          <div class="summary-row"><span>${selTop}</span> ${t("summary.top", { speedUnit: t("unit.speed") })}</div>
         `;
       }
     }
@@ -988,10 +1064,10 @@ document.addEventListener("DOMContentLoaded", function () {
     const summary = document.createElement("div");
     summary.className = "trip-summary";
     summary.innerHTML = `
-      <div class="summary-row"><span>${allTracks.length}</span> trips</div>
-      <div class="summary-row"><span>${totalKm.toFixed(1)}</span> km</div>
-      <div class="summary-row"><span>${hrs}h ${mins}m</span> riding</div>
-      <div class="summary-row"><span>${topSpeed}</span> km/h top</div>
+      <div class="summary-row"><span>${allTracks.length}</span> ${tripsLabel(allTracks.length)}</div>
+      <div class="summary-row"><span>${totalKm.toFixed(1)}</span> ${t("unit.distance")}</div>
+      <div class="summary-row"><span>${t("duration.hm", { hours: hrs, minutes: mins })}</span> ${t("summary.riding")}</div>
+      <div class="summary-row"><span>${topSpeed}</span> ${t("summary.top", { speedUnit: t("unit.speed") })}</div>
     `;
     header.appendChild(summary);
 
@@ -999,10 +1075,10 @@ document.addEventListener("DOMContentLoaded", function () {
     const allRow = document.createElement("div");
     allRow.className = "all-trips-row";
     allRow.innerHTML = `
-      <label><input type="checkbox" class="all-check" checked> All trips</label>
+      <label><input type="checkbox" class="all-check" checked> ${t("allTrips")}</label>
       <div class="tree-actions">
-        <span class="tree-btn expand-all" title="Expand all">&#9662;</span>
-        <span class="tree-btn collapse-all" title="Collapse all">&#9652;</span>
+        <span class="tree-btn expand-all" title="${escapeHtml(t("tree.expandAll"))}">&#9662;</span>
+        <span class="tree-btn collapse-all" title="${escapeHtml(t("tree.collapseAll"))}">&#9652;</span>
       </div>
     `;
     allRow.querySelector(".all-check").addEventListener("change", (e) => {
@@ -1038,17 +1114,17 @@ document.addEventListener("DOMContentLoaded", function () {
     header.appendChild(allRow);
 
     // Group trips by year > month
-    const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+    const MONTH_NAMES = Array.from({ length: 12 }, (_, idx) => t(`month.${idx}`));
     const yearOrder = [];
     const yearMap = {};
-    allTracks.forEach((t, i) => {
-      let year = "Unknown", month = "Unknown";
-      const ds = t.dateStart || "";
+    allTracks.forEach((track, i) => {
+      let year = t("month.unknown"), month = t("month.unknown");
+      const ds = track.dateStart || "";
       if (ds) {
         const d = new Date(ds);
         if (!isNaN(d)) { year = String(d.getFullYear()); month = MONTH_NAMES[d.getMonth()]; }
-      } else if (t.date) {
-        const parts = t.date.split(".");
+      } else if (track.date) {
+        const parts = track.date.split(".");
         if (parts.length === 3) { year = parts[2]; month = MONTH_NAMES[parseInt(parts[1], 10) - 1]; }
       }
       if (!yearMap[year]) { yearMap[year] = { year, monthOrder: [], monthMap: {} }; yearOrder.push(yearMap[year]); }
@@ -1062,39 +1138,40 @@ document.addEventListener("DOMContentLoaded", function () {
       temp: "#ffa000", battery: "#69f0ae", altitude: "#ce93d8",
     };
     const brushSvg = `<svg viewBox="0 0 12 12" width="10" height="10"><path d="M8.5 1.5l2 2-5.5 5.5H3V7z" fill="currentColor"/></svg>`;
-    const paintIcon = (key, ti) => `<span class="paint-btn" data-key="${key}" data-track="${ti}" style="color:${COLORS[key]}" title="Color track by ${key}">${brushSvg}</span>`;
+    const metricLabel = (key) => t(PAINT_METRICS[key]?.labelKey || `metric.${key}`);
+    const paintIcon = (key, ti) => `<span class="paint-btn" data-key="${key}" data-track="${ti}" style="color:${COLORS[key]}" title="${escapeHtml(t("metric.colorBy", { metric: metricLabel(key) }))}">${brushSvg}</span>`;
 
-    function buildTripItem(t, i) {
+    function buildTripItem(track, i) {
       const li = document.createElement("div");
       li.className = "trip-item";
       li.dataset.idx = i;
-      const s = t.stats;
+      const s = track.stats;
 
       let detailHtml = "";
-      if (s.distanceKm) detailHtml += `<div class="detail-row"><span>${paintIcon("distance", i)}<i class="clr" style="background:${COLORS.distance}"></i>Distance</span><span>${s.distanceKm} km</span></div>`;
-      detailHtml += `<div class="detail-row"><span>${paintIcon("speed", i)}<i class="clr" style="background:${COLORS.speed}"></i>Speed</span><span>${s.avgSpeed} / ${s.maxSpeed} km/h</span></div>`;
-      if (s.maxVoltage) detailHtml += `<div class="detail-row"><span>${paintIcon("voltage", i)}<i class="clr" style="background:${COLORS.voltage}"></i>Voltage</span><span>${s.minVoltage} - ${s.maxVoltage} V</span></div>`;
-      if (s.maxTemp) detailHtml += `<div class="detail-row"><span>${paintIcon("temp", i)}<i class="clr" style="background:${COLORS.temp}"></i>Temp</span><span>${s.maxTemp} &deg;C</span></div>`;
-      if (s.maxAlt) detailHtml += `<div class="detail-row"><span>${paintIcon("altitude", i)}<i class="clr" style="background:${COLORS.altitude}"></i>Altitude</span><span>${s.minAlt} - ${s.maxAlt} m</span></div>`;
-      if (t.dateStart) {
-        const start = t.dateStart.split("T")[1]?.substring(0, 8) || "";
-        const end = t.dateEnd.split("T")[1]?.substring(0, 8) || "";
-        if (start) detailHtml += `<div class="detail-row"><span>Time</span><span>${start} - ${end}</span></div>`;
+      if (s.distanceKm) detailHtml += `<div class="detail-row"><span>${paintIcon("distance", i)}<i class="clr" style="background:${COLORS.distance}"></i>${t("metric.distance")}</span><span>${s.distanceKm} ${t("unit.distance")}</span></div>`;
+      detailHtml += `<div class="detail-row"><span>${paintIcon("speed", i)}<i class="clr" style="background:${COLORS.speed}"></i>${t("metric.speed")}</span><span>${s.avgSpeed} / ${s.maxSpeed} ${t("unit.speed")}</span></div>`;
+      if (s.maxVoltage) detailHtml += `<div class="detail-row"><span>${paintIcon("voltage", i)}<i class="clr" style="background:${COLORS.voltage}"></i>${t("metric.voltage")}</span><span>${s.minVoltage} - ${s.maxVoltage} ${t("unit.voltage")}</span></div>`;
+      if (s.maxTemp) detailHtml += `<div class="detail-row"><span>${paintIcon("temp", i)}<i class="clr" style="background:${COLORS.temp}"></i>${t("metric.temp")}</span><span>${s.maxTemp} ${t("unit.temperature")}</span></div>`;
+      if (s.maxAlt) detailHtml += `<div class="detail-row"><span>${paintIcon("altitude", i)}<i class="clr" style="background:${COLORS.altitude}"></i>${t("metric.altitude")}</span><span>${s.minAlt} - ${s.maxAlt} ${t("unit.altitude")}</span></div>`;
+      if (track.dateStart) {
+        const start = track.dateStart.split("T")[1]?.substring(0, 8) || "";
+        const end = track.dateEnd.split("T")[1]?.substring(0, 8) || "";
+        if (start) detailHtml += `<div class="detail-row"><span>${t("metric.time")}</span><span>${start} - ${end}</span></div>`;
       }
       detailHtml += `<div class="chart-wrap"><canvas class="trip-chart" data-idx="${i}"></canvas><div class="chart-tooltip hidden"></div></div>`;
 
       const meta = s.points > 0
-        ? `${s.distanceKm} km &middot; ${s.maxSpeed} km/h max`
-        : `No GPS &middot; ${s.maxSpeed} km/h max &middot; ${(s.rows || 0).toLocaleString()} samples`;
+        ? `${s.distanceKm} ${t("unit.distance")} &middot; ${s.maxSpeed} ${t("unit.speed")} ${t("trip.max")}`
+        : `${t("trip.noGps")} &middot; ${s.maxSpeed} ${t("unit.speed")} ${t("trip.max")} &middot; ${(s.rows || 0).toLocaleString()} ${samplesLabel(s.rows || 0)}`;
 
       li.innerHTML = `
         <div class="trip-header">
           <input type="checkbox" class="trip-check" data-idx="${i}" ${trackVisible.has(i) ? "checked" : ""}>
           <div class="trip-info">
-            <div class="trip-date">${t.date || t.name}</div>
+            <div class="trip-date">${track.date || track.name}</div>
             <div class="trip-meta">${meta}</div>
           </div>
-          <a class="inspect-btn" href="inspector.html?i=${i}" title="Open trip inspector">
+          <a class="inspect-btn" href="inspector.html?i=${i}" title="${escapeHtml(t("trip.inspectTitle"))}">
             <svg viewBox="0 0 16 16" width="14" height="14"><circle cx="7" cy="7" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="10.5" y1="10.5" x2="14" y2="14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
           </a>
         </div>
@@ -1215,7 +1292,7 @@ document.addEventListener("DOMContentLoaded", function () {
         yHeader.innerHTML = `
           <input type="checkbox" class="year-check" checked>
           <span class="year-label">${yg.year}</span>
-          <span class="year-meta">${yearTrips} trips &middot; ${yearKm.toFixed(1)} km</span>
+          <span class="year-meta">${escapeHtml(t("group.meta", { count: yearTrips, trips: tripsLabel(yearTrips), km: yearKm.toFixed(1), distanceUnit: t("unit.distance") }))}</span>
           <span class="year-chevron">&#9662;</span>
         `;
 
@@ -1265,7 +1342,7 @@ document.addEventListener("DOMContentLoaded", function () {
       header.innerHTML = `
         <input type="checkbox" class="month-check" checked>
         <span class="month-label">${mg.month}</span>
-        <span class="month-meta">${mg.indices.length} trips &middot; ${groupKm.toFixed(1)} km</span>
+        <span class="month-meta">${escapeHtml(t("group.meta", { count: mg.indices.length, trips: tripsLabel(mg.indices.length), km: groupKm.toFixed(1), distanceUnit: t("unit.distance") }))}</span>
         <span class="month-chevron">&#9662;</span>
       `;
 
@@ -1302,7 +1379,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const addBtn = document.createElement("label");
     addBtn.className = "add-more-btn";
-    addBtn.innerHTML = `+ Add more <input type="file" accept=".dbb,.csv" style="display:none" />`;
+    addBtn.innerHTML = `${t("footer.addMore")} <input type="file" accept=".dbb,.csv" style="display:none" />`;
     addBtn.querySelector("input").addEventListener("change", (e) => {
       if (e.target.files[0]) handleFile(e.target.files[0], true);
     });
@@ -1317,7 +1394,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const homeBtn = document.createElement("div");
     homeBtn.className = "main-screen-btn";
-    homeBtn.textContent = "Back to main screen";
+    homeBtn.textContent = t("footer.backMain");
     homeBtn.addEventListener("click", () => navigate("#load"));
     navRow.appendChild(homeBtn);
 
@@ -1329,7 +1406,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
     const exportBtn = document.createElement("div");
     exportBtn.className = "export-btn";
-    exportBtn.textContent = `Export selected (${trackVisible.size})`;
+    exportBtn.textContent = t("footer.exportSelectedCount", { count: trackVisible.size });
     exportBtn.addEventListener("click", exportSelected);
     footer.appendChild(exportBtn);
 
@@ -1368,7 +1445,7 @@ document.addEventListener("DOMContentLoaded", function () {
       URL.revokeObjectURL(url);
     } else {
       if (typeof JSZip === "undefined") {
-        alert("Export library not loaded. Please refresh and try again.");
+        alert(t("export.libraryMissing"));
         return;
       }
       const zip = new JSZip();
@@ -1397,16 +1474,16 @@ document.addEventListener("DOMContentLoaded", function () {
   };
 
   const SERIES = [
-    { idx: 1, key: "speed",    label: "Speed",   unit: "km/h" },
-    { idx: 2, key: "voltage",  label: "Voltage", unit: "V" },
-    { idx: 3, key: "temp",     label: "Temp",    unit: "\u00b0C" },
-    { idx: 4, key: "battery",  label: "Battery", unit: "%" },
-    { idx: 5, key: "altitude", label: "Alt",     unit: "m" },
+    { idx: 1, key: "speed",    labelKey: "metric.speed",   unitKey: "unit.speed" },
+    { idx: 2, key: "voltage",  labelKey: "metric.voltage", unitKey: "unit.voltage" },
+    { idx: 3, key: "temp",     labelKey: "metric.temp",    unitKey: "unit.temperature" },
+    { idx: 4, key: "battery",  labelKey: "metric.battery", unitKey: "unit.percent" },
+    { idx: 5, key: "altitude", labelKey: "metric.alt",     unitKey: "unit.altitude" },
   ];
 
   function drawChart(canvas, trackIdx) {
-    const t = allTracks[trackIdx];
-    const ts = t.timeseries;
+    const track = allTracks[trackIdx];
+    const ts = track.timeseries;
     const dpr = window.devicePixelRatio || 1;
     const rect = canvas.getBoundingClientRect();
     const w = rect.width;
@@ -1422,7 +1499,7 @@ document.addEventListener("DOMContentLoaded", function () {
       ctx.fillStyle = "#555";
       ctx.font = "11px -apple-system, sans-serif";
       ctx.textAlign = "center";
-      ctx.fillText("No data", w / 2, h / 2 + 4);
+      ctx.fillText(t("chart.noData"), w / 2, h / 2 + 4);
       canvas._chartData = null;
       return;
     }
@@ -1585,9 +1662,9 @@ document.addEventListener("DOMContentLoaded", function () {
     const trackIdx = parseInt(canvas.dataset.idx);
     const cumKm = getCumDistTs(allTracks[trackIdx])[best] || 0;
 
-    let html = `<span style="color:#888">${formatSec(row[0])}</span> <span style="color:#66bb6a">${cumKm.toFixed(2)} km</span>`;
+    let html = `<span style="color:#888">${formatSec(row[0])}</span> <span style="color:#66bb6a">${cumKm.toFixed(2)} ${t("unit.distance")}</span>`;
     for (const s of cd.activeSeries) {
-      html += `<br><i class="clr" style="background:${CHART_COLORS[s.key]}"></i>${s.label}: <b>${row[s.idx].toFixed(1)}</b> ${s.unit}`;
+      html += `<br><i class="clr" style="background:${CHART_COLORS[s.key]}"></i>${t(s.labelKey)}: <b>${row[s.idx].toFixed(1)}</b> ${t(s.unitKey)}`;
     }
     tip.innerHTML = html;
     tip.classList.remove("hidden");
@@ -1680,6 +1757,31 @@ document.addEventListener("DOMContentLoaded", function () {
     updateVisibilityUI();
   }
 
+  function restoreSelectedTripItem() {
+    if (selectedIdx < 0) return;
+    const el = tripList.querySelector(`.trip-item[data-idx="${selectedIdx}"]`);
+    if (!el) return;
+    const monthGroup = el.closest(".month-group");
+    if (monthGroup) monthGroup.classList.add("expanded");
+    const yearGroup = el.closest(".year-group");
+    if (yearGroup) yearGroup.classList.add("expanded");
+    el.classList.add("active");
+    setTimeout(() => {
+      el.querySelectorAll(".trip-chart").forEach((canvas) => {
+        if (canvas.offsetWidth > 0) drawChart(canvas, parseInt(canvas.dataset.idx));
+      });
+    }, 50);
+  }
+
+  window.addEventListener("i18n:change", () => {
+    rebuildLayerControl();
+    renderRecentFiles();
+    if (!allTracks.length) return;
+    buildTripList();
+    restoreSelectedTripItem();
+    updateGlow();
+  });
+
   panelTab.addEventListener("click", () => panel.classList.toggle("open"));
 
   fileInput.addEventListener("change", (e) => {
@@ -1694,7 +1796,7 @@ document.addEventListener("DOMContentLoaded", function () {
     if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
   });
 
-  // --- Programmatic data injection (used by EvenDarkerBot Android app) ---
+  // --- Programmatic data injection ---
   // Accepts a base64-encoded .dbb (ZIP) or .csv file and loads it.
   // Does NOT save to recents or cache — keeps the viewer clean for embedded use.
   window.loadFileFromBase64 = async function (base64String, filename) {
@@ -1705,23 +1807,23 @@ document.addEventListener("DOMContentLoaded", function () {
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
       const file = new File([bytes], filename, { type: "application/octet-stream" });
       const lname = file.name.toLowerCase();
-      if (!lname.endsWith(".dbb") && !lname.endsWith(".csv")) return { success: false, error: "Unsupported file type" };
+      if (!lname.endsWith(".dbb") && !lname.endsWith(".csv")) return { success: false, error: t("embedded.unsupportedFile") };
 
       progressArea.classList.remove("hidden");
       progressFill.style.width = "0%";
-      progressText.textContent = "Loading...";
+      progressText.textContent = t("progress.loading");
 
       const parsedTracks = await parseFileLocally(parserWorker, file, (msg) => {
         if (msg.type === "progress") {
           const pct = Math.round((msg.current / msg.total) * 100);
           progressFill.style.width = pct + "%";
-          progressText.textContent = "Parsing trip " + msg.current + " of " + msg.total;
+          progressText.textContent = t("progress.parsing", { current: msg.current, total: msg.total });
         }
       });
 
       if (!parsedTracks.length) {
-        progressText.textContent = "No trip data found";
-        return { success: false, error: "No trip data found" };
+        progressText.textContent = t("progress.noTripData");
+        return { success: false, error: t("progress.noTripData") };
       }
 
       // Load directly — no saveRecentFile, no saveTracks
@@ -1745,7 +1847,7 @@ document.addEventListener("DOMContentLoaded", function () {
       if (!allTracks.length) {
         const hint = document.createElement("div");
         hint.style.cssText = "color:#888;font-size:13px;margin-top:12px;text-align:center;";
-        hint.innerHTML = 'Waiting for file&hellip; see <a href="https://github.com/eried/eucviewer/blob/main/INTEGRATION.md" target="_blank" style="color:#4FC3F7;">INTEGRATION.md</a> on GitHub';
+        hint.innerHTML = t("embedded.waiting");
         uploadBox.appendChild(hint);
       }
     }, 5000);
