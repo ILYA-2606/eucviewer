@@ -11,6 +11,44 @@
 <body>
     <div id="map"></div>
 
+    <div id="map-controls" class="hidden collapsed">
+        <button type="button" id="map-controls-toggle" title="Map settings" aria-label="Map settings">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        </button>
+        <div class="map-controls-body">
+            <label>
+                <span data-i18n="inspector.mapStyle">Map style</span>
+                <select id="map-style-select">
+                    <option value="standard" selected data-i18n="map.standard">Standard</option>
+                    <option value="dark" data-i18n="map.dark">Dark</option>
+                    <option value="satellite" data-i18n="map.satellite">Satellite</option>
+                    <option value="topo" data-i18n="map.topo">Topographic</option>
+                </select>
+            </label>
+            <label>
+                <span data-i18n="inspector.traceColor">Trace color</span>
+                <select id="trace-color-select">
+                    <option value="solid" selected data-i18n="inspector.solid">Solid</option>
+                    <option value="speed" data-i18n="metric.speed">Speed</option>
+                    <option value="pwm" data-i18n="metric.pwm">PWM</option>
+                    <option value="power" data-i18n="metric.power">Power</option>
+                    <option value="current" data-i18n="metric.current">Current</option>
+                    <option value="battery" data-i18n="metric.battery">Battery</option>
+                    <option value="voltage" data-i18n="metric.voltage">Voltage</option>
+                    <option value="temp" data-i18n="metric.temp">Temp</option>
+                    <option value="altitude" data-i18n="metric.altitude">Altitude</option>
+                </select>
+            </label>
+            <div id="color-legend" class="hidden">
+                <div class="legend-bar"></div>
+                <div class="legend-scale">
+                    <span data-legend-min>&mdash;</span>
+                    <span data-legend-max>&mdash;</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div id="upload-overlay">
         <div id="language-switcher" aria-label="Language" data-i18n-aria-label="language.switcherLabel">
             <button type="button" data-lang-option="en" aria-pressed="true">EN</button>
@@ -103,6 +141,6 @@
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-    <script src="static/js/app.js?v=35"></script>
+    <script src="static/js/app.js?v=38"></script>
 </body>
 </html>

@@ -20,19 +20,19 @@ document.addEventListener("DOMContentLoaded", async function () {
   const topoLayer = L.tileLayer("https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png", {
     maxZoom: 17,
   });
+  // Map style is chosen in the #map-controls panel and persisted to localStorage.
+  // Each style records whether the dark-tiles invert filter applies.
   const MAP_LAYER_KEY = "dbb_map_layer";
-  const baseLayerDefs = {
-    standard: { layer: standardLayer, labelKey: "map.standard" },
-    dark: { layer: darkLayer, labelKey: "map.dark" },
-    satellite: { layer: satelliteLayer, labelKey: "map.satellite" },
-    topo: { layer: topoLayer, labelKey: "map.topo" },
+  const BASE_STYLES = {
+    standard:  { layer: standardLayer,  dark: false },
+    dark:      { layer: darkLayer,      dark: true  },
+    satellite: { layer: satelliteLayer, dark: false },
+    topo:      { layer: topoLayer,      dark: false },
   };
-  const legacyBaseLayerIds = { "Standard": "standard", "Dark": "dark", "Satellite": "satellite", "Topo": "topo" };
-  let selectedBaseLayerId = "standard";
+  let selectedStyle = "standard";
   try {
-    const savedLayerId = localStorage.getItem(MAP_LAYER_KEY);
-    if (savedLayerId && baseLayerDefs[savedLayerId]) selectedBaseLayerId = savedLayerId;
-    else if (savedLayerId && legacyBaseLayerIds[savedLayerId]) selectedBaseLayerId = legacyBaseLayerIds[savedLayerId];
+    const saved = (localStorage.getItem(MAP_LAYER_KEY) || "").toLowerCase();
+    if (BASE_STYLES[saved]) selectedStyle = saved;
   } catch (_) {}
   let glowLayer;
   let layerControl;
@@ -43,41 +43,18 @@ document.addEventListener("DOMContentLoaded", async function () {
     zoomControl: false,
     preferCanvas: true,
     zoomSnap: 1,
-    layers: [baseLayerDefs[selectedBaseLayerId].layer],
+    layers: [BASE_STYLES[selectedStyle].layer],
   });
-  map.getContainer().classList.toggle("dark-tiles", selectedBaseLayerId === "dark");
+  map.getContainer().classList.toggle("dark-tiles", BASE_STYLES[selectedStyle].dark);
 
-  function getBaseLayerId(layer) {
-    return Object.keys(baseLayerDefs).find((id) => baseLayerDefs[id].layer === layer) || selectedBaseLayerId;
-  }
-
-  function rebuildLayerControl() {
-    if (layerControl) map.removeControl(layerControl);
-    const localizedLayers = {};
-    for (const id of ["standard", "dark", "satellite", "topo"]) {
-      localizedLayers[t(baseLayerDefs[id].labelKey)] = baseLayerDefs[id].layer;
-    }
-    layerControl = L.control.layers(localizedLayers, null, { position: "bottomleft" }).addTo(map);
-  }
-
-  map.on("baselayerchange", function (e) {
-    selectedBaseLayerId = getBaseLayerId(e.layer);
-    try { localStorage.setItem(MAP_LAYER_KEY, selectedBaseLayerId); } catch (_) {}
-    if (selectedBaseLayerId === "dark") {
-      map.getContainer().classList.add("dark-tiles");
-    } else {
-      map.getContainer().classList.remove("dark-tiles");
-    }
-    if (glowLayer) glowLayer.redraw();
-  });
-
+  // Base layer is driven by the #map-controls panel (see setBaseStyle below);
+  // the bottom-left control is just zoom now.
   L.control.zoom({ position: "bottomleft" }).addTo(map);
-  rebuildLayerControl();
 
   // --- State ---
   let allTracks = [];
   let selectedIdx = -1;
-  let paintMode = null;
+  let traceColor = "solid"; // "solid" | speed | battery | voltage | temp | altitude | distance
   let trackVisible = new Set();
 
   function haversineKm(lat1, lon1, lat2, lon2) {
@@ -102,6 +79,13 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
     track._cumDistPts = arr;
     return arr;
+  }
+
+  function rebuildLayerControl() {
+    if (layerControl) {
+      map.removeControl(layerControl);
+      layerControl = null;
+    }
   }
 
   function getCumDistTs(track) {
@@ -133,15 +117,20 @@ document.addEventListener("DOMContentLoaded", async function () {
 
   function distanceColor(t) {
     t = Math.max(0, Math.min(1, t));
-    const r = Math.round(30 * t);
-    const g = Math.round(220 * (1 - t * 0.7));
-    const b = Math.round(100 * (1 - t * 0.8));
+    // Violet (route start) → green (route end).
+    const r = Math.round(165 + (60 - 165) * t);
+    const g = Math.round(75 + (220 - 75) * t);
+    const b = Math.round(235 + (120 - 235) * t);
     return `${r},${g},${b}`;
   }
 
   const PAINT_METRICS = {
     distance: { pointIdx: -1, labelKey: "metric.distance" },
     speed:    { pointIdx: 2, labelKey: "metric.speed" },
+    pwm:      { pointIdx: 7, labelKey: "metric.pwm" },
+    power:    { pointIdx: 9, labelKey: "metric.power" },
+    current:  { pointIdx: 8, labelKey: "metric.current" },
+    battery:  { pointIdx: 6, labelKey: "metric.battery" },
     voltage:  { pointIdx: 4, labelKey: "metric.voltage" },
     temp:     { pointIdx: 5, labelKey: "metric.temp" },
     altitude: { pointIdx: 3, labelKey: "metric.altitude" },
@@ -309,28 +298,128 @@ document.addEventListener("DOMContentLoaded", async function () {
   glowLayer = new GlowLayer();
   glowLayer.addTo(map);
 
+  // Greys out trace-colour options the selected trip has no data for.
+  function updateTraceColorOptions() {
+    const sel = document.getElementById("trace-color-select");
+    if (!sel) return;
+    const track = selectedIdx >= 0 ? allTracks[selectedIdx] : null;
+    for (const opt of sel.options) {
+      const key = opt.value;
+      if (key === "solid") { opt.disabled = false; continue; }
+      let hasData = false;
+      if (track && track.points && track.points.length) {
+        if (key === "distance") {
+          hasData = true;
+        } else {
+          const m = PAINT_METRICS[key];
+          if (m) {
+            for (const p of track.points) {
+              const v = p[m.pointIdx];
+              if (typeof v === "number" && v !== 0) { hasData = true; break; }
+            }
+          }
+        }
+      }
+      opt.disabled = !hasData;
+    }
+    const active = sel.querySelector(`option[value="${traceColor}"]`);
+    if (traceColor !== "solid" && active && active.disabled) {
+      traceColor = "solid";
+      sel.value = "solid";
+    }
+  }
+
   function updateGlow() {
+    updateTraceColorOptions();
     const latLngs = allTracks.map((t) => t.points.map((p) => L.latLng(p[0], p[1])));
     glowLayer.setData(latLngs, selectedIdx);
     glowLayer.setVisible(trackVisible);
-    if (paintMode && paintMode.trackIdx === selectedIdx && allTracks[paintMode.trackIdx]) {
-      const pts = allTracks[paintMode.trackIdx].points;
-      let values, min, max, colorFn;
-      if (paintMode.pointIdx === -1) {
+
+    // Trace color paints the selected track only; other tracks stay cyan.
+    const metric = traceColor !== "solid" ? PAINT_METRICS[traceColor] : null;
+    const track = selectedIdx >= 0 ? allTracks[selectedIdx] : null;
+    if (metric && track && track.points.length >= 2) {
+      const pts = track.points;
+      let values, min, max, colorFn, legMin, legMax;
+      if (metric.pointIdx === -1) {
+        // Distance: colour by progress along the route; legend shows km.
         values = pts.map((_, idx) => idx);
         min = 0; max = pts.length - 1;
         colorFn = distanceColor;
+        const cum = getCumDistPts(track);
+        legMin = 0; legMax = cum[cum.length - 1] || 0;
       } else {
-        values = pts.map(p => p[paintMode.pointIdx]);
+        values = pts.map((p) => p[metric.pointIdx]);
         min = Infinity; max = -Infinity;
-        for (const v of values) { if (v < min) min = v; if (v > max) max = v; }
+        for (const v of values) {
+          if (typeof v !== "number") continue;
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
         colorFn = heatColor;
+        legMin = min; legMax = max;
       }
-      glowLayer.setPaint({ trackIdx: paintMode.trackIdx, values, min, max, span: max - min, colorFn });
+      if (!isFinite(min) || !isFinite(max) || min === max) {
+        // Metric absent for this trip (legacy track or an empty column).
+        glowLayer.setPaint(null);
+        updateTraceLegend(null);
+        return;
+      }
+      glowLayer.setPaint({ trackIdx: selectedIdx, values, min, max, span: max - min, colorFn });
+      updateTraceLegend(traceColor, legMin, legMax);
     } else {
       glowLayer.setPaint(null);
+      updateTraceLegend(null);
     }
   }
+
+  // --- Map controls overlay: map style + trace colour ---
+  const mapControlsEl = document.getElementById("map-controls");
+
+  function setBaseStyle(name) {
+    const style = BASE_STYLES[name];
+    if (!style) return;
+    const current = BASE_STYLES[selectedStyle];
+    if (style.layer !== current.layer) {
+      map.removeLayer(current.layer);
+      map.addLayer(style.layer);
+    }
+    selectedStyle = name;
+    // Dark gets the invert filter; the others show their true colours.
+    map.getContainer().classList.toggle("dark-tiles", style.dark);
+    try { localStorage.setItem(MAP_LAYER_KEY, name); } catch (_) {}
+    // Track glow colours depend on a light vs dark basemap — repaint.
+    if (glowLayer) glowLayer.redraw();
+  }
+
+  const TRACE_UNITS = { speed: "km/h", pwm: "%", power: "W", current: "A", battery: "%", voltage: "V", temp: "°C", altitude: "m", distance: "km" };
+  const legendEl = document.getElementById("color-legend");
+  function legendGradientCss(key) {
+    // distance → distanceColor ramp; metrics → heatColor ramp.
+    return key === "distance"
+      ? "linear-gradient(90deg, rgb(165,75,235), rgb(60,220,120))"
+      : "linear-gradient(90deg, rgb(0,0,255), rgb(0,255,255), rgb(0,255,0), rgb(255,255,0), rgb(255,0,0))";
+  }
+  function updateTraceLegend(key, min, max) {
+    if (!legendEl) return;
+    if (!key || key === "solid") { legendEl.classList.add("hidden"); return; }
+    legendEl.querySelector(".legend-bar").style.background = legendGradientCss(key);
+    const unit = TRACE_UNITS[key] || "";
+    const fmt = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + unit;
+    legendEl.querySelector("[data-legend-min]").textContent = fmt(min);
+    legendEl.querySelector("[data-legend-max]").textContent = fmt(max);
+    legendEl.classList.remove("hidden");
+  }
+
+  const styleSelEl = document.getElementById("map-style-select");
+  const colorSelEl = document.getElementById("trace-color-select");
+  const mapControlsToggle = document.getElementById("map-controls-toggle");
+  if (styleSelEl) {
+    styleSelEl.value = selectedStyle;
+    styleSelEl.addEventListener("change", (e) => setBaseStyle(e.target.value));
+  }
+  if (colorSelEl) colorSelEl.addEventListener("change", (e) => { traceColor = e.target.value; updateGlow(); });
+  if (mapControlsToggle) mapControlsToggle.addEventListener("click", () => mapControlsEl.classList.toggle("collapsed"));
 
   // --- Hover tooltip for selected track ---
   const tooltip = document.createElement("div");
@@ -387,14 +476,20 @@ document.addEventListener("DOMContentLoaded", async function () {
     const volt = bestPt[4] || 0;
     const temp = bestPt[5] || 0;
     const batt = bestPt[6] || 0;
+    const pwm = bestPt[7] || 0;
+    const current = bestPt[8] || 0;
+    const power = bestPt[9] || 0;
     const cumKm = getCumDistPts(allTracks[selectedIdx])[bestIdx] || 0;
 
     let html = `<i class="clr" style="background:${"#66bb6a"}"></i>${t("metric.distance")}: <b>${cumKm.toFixed(2)}</b> ${t("unit.distance")}`;
     html += `<br><i class="clr" style="background:#00e5ff"></i>${t("metric.speed")}: <b>${speed.toFixed(1)}</b> ${t("unit.speed")}`;
+    if (pwm)     html += `<br><i class="clr" style="background:#ff4081"></i>${t("metric.pwm")}: <b>${pwm.toFixed(1)}</b> %`;
+    if (power)   html += `<br><i class="clr" style="background:#7c4dff"></i>${t("metric.power")}: <b>${power.toFixed(0)}</b> ${t("unit.w")}`;
+    if (current) html += `<br><i class="clr" style="background:#ffd740"></i>${t("metric.current")}: <b>${current.toFixed(1)}</b> ${t("unit.a")}`;
     if (volt) html += `<br><i class="clr" style="background:#ff5252"></i>${t("metric.voltage")}: <b>${volt.toFixed(1)}</b> ${t("unit.voltage")}`;
     if (temp) html += `<br><i class="clr" style="background:#ffa000"></i>${t("metric.temp")}: <b>${temp.toFixed(0)}</b> ${t("unit.temperature")}`;
     if (batt) html += `<br><i class="clr" style="background:#69f0ae"></i>${t("metric.battery")}: <b>${batt.toFixed(0)}</b>%`;
-    if (alt)  html += `<br><i class="clr" style="background:#ce93d8"></i>${t("metric.alt")}: <b>${alt.toFixed(0)}</b> ${t("unit.altitude")}`;
+    if (alt)  html += `<br><i class="clr" style="background:#ce93d8"></i>${t("metric.altitude")}: <b>${alt.toFixed(0)}</b> ${t("unit.altitude")}`;
 
     tooltip.innerHTML = html;
     tooltip.style.left = (e.clientX + 14) + "px";
@@ -494,7 +589,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   const tripList = document.getElementById("trip-list");
   const tripDetail = document.getElementById("trip-detail");
   const parserWorker = createParserWorker();
-  const RECENT_DB_NAME = "darknessbot-trip-viewer";
+  const RECENT_DB_NAME = "eucplanet-trip-viewer";
   const RECENT_STORE_NAME = "recentFiles";
   const SESSION_STORE_NAME = "currentSession";
   const SESSION_KEY = "tracks";
@@ -550,7 +645,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   }
 
   function createParserWorker() {
-    return new Worker("static/js/parser-worker.js?v=5");
+    return new Worker("static/js/parser-worker.js?v=7");
   }
 
   function createRecentFilesUi() {
@@ -926,10 +1021,12 @@ document.addEventListener("DOMContentLoaded", async function () {
     selectedIdx = -1;
     trackVisible = new Set(tracks.map((_, i) => i));
     updateGlow();
-    fitAll();
+    // No fitAll() here — the auto-select below zooms to track 0. Calling both
+    // raced two zoom animations and could leave the map un-zoomed on start.
 
     panelTabText.textContent = t("panel.tripExplorerAll", { total: tracks.length });
     buildTripList();
+    mapControlsEl.classList.remove("hidden");
 
     if (!skipNav) navigate("#view", false);
     else {
@@ -1088,8 +1185,6 @@ document.addEventListener("DOMContentLoaded", async function () {
         trackVisible = new Set();
         if (selectedIdx >= 0) {
           selectedIdx = -1;
-          paintMode = null;
-          tripList.querySelectorAll(".paint-btn.active").forEach(b => b.classList.remove("active"));
           tooltip.classList.add("hidden");
           hideChartMarker();
           document.querySelectorAll(".trip-item.active").forEach(el => el.classList.remove("active"));
@@ -1137,9 +1232,6 @@ document.addEventListener("DOMContentLoaded", async function () {
       distance: "#66bb6a", speed: "#00e5ff", voltage: "#ff5252",
       temp: "#ffa000", battery: "#69f0ae", altitude: "#ce93d8",
     };
-    const brushSvg = `<svg viewBox="0 0 12 12" width="10" height="10"><path d="M8.5 1.5l2 2-5.5 5.5H3V7z" fill="currentColor"/></svg>`;
-    const metricLabel = (key) => t(PAINT_METRICS[key]?.labelKey || `metric.${key}`);
-    const paintIcon = (key, ti) => `<span class="paint-btn" data-key="${key}" data-track="${ti}" style="color:${COLORS[key]}" title="${escapeHtml(t("metric.colorBy", { metric: metricLabel(key) }))}">${brushSvg}</span>`;
 
     function buildTripItem(track, i) {
       const li = document.createElement("div");
@@ -1147,18 +1239,8 @@ document.addEventListener("DOMContentLoaded", async function () {
       li.dataset.idx = i;
       const s = track.stats;
 
-      let detailHtml = "";
-      if (s.distanceKm) detailHtml += `<div class="detail-row"><span>${paintIcon("distance", i)}<i class="clr" style="background:${COLORS.distance}"></i>${t("metric.distance")}</span><span>${s.distanceKm} ${t("unit.distance")}</span></div>`;
-      detailHtml += `<div class="detail-row"><span>${paintIcon("speed", i)}<i class="clr" style="background:${COLORS.speed}"></i>${t("metric.speed")}</span><span>${s.avgSpeed} / ${s.maxSpeed} ${t("unit.speed")}</span></div>`;
-      if (s.maxVoltage) detailHtml += `<div class="detail-row"><span>${paintIcon("voltage", i)}<i class="clr" style="background:${COLORS.voltage}"></i>${t("metric.voltage")}</span><span>${s.minVoltage} - ${s.maxVoltage} ${t("unit.voltage")}</span></div>`;
-      if (s.maxTemp) detailHtml += `<div class="detail-row"><span>${paintIcon("temp", i)}<i class="clr" style="background:${COLORS.temp}"></i>${t("metric.temp")}</span><span>${s.maxTemp} ${t("unit.temperature")}</span></div>`;
-      if (s.maxAlt) detailHtml += `<div class="detail-row"><span>${paintIcon("altitude", i)}<i class="clr" style="background:${COLORS.altitude}"></i>${t("metric.altitude")}</span><span>${s.minAlt} - ${s.maxAlt} ${t("unit.altitude")}</span></div>`;
-      if (track.dateStart) {
-        const start = track.dateStart.split("T")[1]?.substring(0, 8) || "";
-        const end = track.dateEnd.split("T")[1]?.substring(0, 8) || "";
-        if (start) detailHtml += `<div class="detail-row"><span>${t("metric.time")}</span><span>${start} - ${end}</span></div>`;
-      }
-      detailHtml += `<div class="chart-wrap"><canvas class="trip-chart" data-idx="${i}"></canvas><div class="chart-tooltip hidden"></div></div>`;
+      let detailHtml = buildDetailHtml(track);
+      detailHtml += `<div class="chart-wrap"><canvas class="trip-chart" data-idx="${i}"></canvas></div>`;
 
       const meta = s.points > 0
         ? `${s.distanceKm} ${t("unit.distance")} &middot; ${s.maxSpeed} ${t("unit.speed")} ${t("trip.max")}`
@@ -1187,8 +1269,6 @@ document.addEventListener("DOMContentLoaded", async function () {
           trackVisible.delete(idx);
           if (selectedIdx === idx) {
             selectedIdx = -1;
-            paintMode = null;
-            tripList.querySelectorAll(".paint-btn.active").forEach(b => b.classList.remove("active"));
             tooltip.classList.add("hidden");
             hideChartMarker();
             li.classList.remove("active");
@@ -1202,25 +1282,6 @@ document.addEventListener("DOMContentLoaded", async function () {
       li.addEventListener("click", (e) => {
         if (e.target.closest(".trip-check")) return;
         if (e.target.closest(".inspect-btn")) { e.stopPropagation(); return; }
-        const pb = e.target.closest(".paint-btn");
-        if (pb) {
-          e.stopPropagation();
-          const key = pb.dataset.key;
-          const ti = parseInt(pb.dataset.track);
-          if (paintMode && paintMode.trackIdx === ti && paintMode.key === key) {
-            paintMode = null;
-          } else {
-            paintMode = { trackIdx: ti, key, pointIdx: PAINT_METRICS[key].pointIdx };
-          }
-          tripList.querySelectorAll(".paint-btn").forEach(b => b.classList.remove("active"));
-          if (paintMode) {
-            tripList.querySelectorAll(`.paint-btn[data-key="${paintMode.key}"][data-track="${paintMode.trackIdx}"]`)
-              .forEach(b => b.classList.add("active"));
-          }
-          if (selectedIdx !== ti) { selectTrip(ti); return; }
-          updateGlow();
-          return;
-        }
         if (e.target.closest(".chart-wrap")) return;
         selectTrip(i);
       });
@@ -1263,8 +1324,6 @@ document.addEventListener("DOMContentLoaded", async function () {
           trackVisible.delete(idx);
           if (selectedIdx === idx) {
             selectedIdx = -1;
-            paintMode = null;
-            tripList.querySelectorAll(".paint-btn.active").forEach(b => b.classList.remove("active"));
             const item = cb.closest(".trip-item");
             if (item) item.classList.remove("active");
           }
@@ -1471,15 +1530,129 @@ document.addEventListener("DOMContentLoaded", async function () {
     temp:     "#ffa000",
     battery:  "#69f0ae",
     altitude: "#ce93d8",
+    pwm:      "#ff4081",
+    current:  "#ffd740",
+    power:    "#7c4dff",
   };
 
   const SERIES = [
     { idx: 1, key: "speed",    labelKey: "metric.speed",   unitKey: "unit.speed" },
+    { idx: 9,  key: "pwm",      labelKey: "metric.pwm",     unitKey: "unit.percent" },
+    { idx: 11, key: "power",    labelKey: "metric.power",   unitKey: "unit.w" },
+    { idx: 10, key: "current",  labelKey: "metric.current", unitKey: "unit.a" },
     { idx: 2, key: "voltage",  labelKey: "metric.voltage", unitKey: "unit.voltage" },
     { idx: 3, key: "temp",     labelKey: "metric.temp",    unitKey: "unit.temperature" },
     { idx: 4, key: "battery",  labelKey: "metric.battery", unitKey: "unit.percent" },
-    { idx: 5, key: "altitude", labelKey: "metric.alt",     unitKey: "unit.altitude" },
+    { idx: 5, key: "altitude", labelKey: "metric.altitude",     unitKey: "unit.altitude" },
   ];
+
+  // Detail rows: a static range by default; while the cursor scrubs the mini
+  // chart they switch to the live value at that sample (setDetailRowsLive) and
+  // revert to the range on mouse-out (restoreDetailRows).
+  const DETAIL_ROWS = [
+    { key: "distance", labelKey: "metric.distance", color: "#66bb6a", unitKey: "unit.distance" },
+    { key: "speed",    labelKey: "metric.speed",    color: "#00e5ff", idx: 1,  unitKey: "unit.speed", dp: 1 },
+    { key: "pwm",      labelKey: "metric.pwm",      color: "#ff4081", idx: 9,  unitKey: "unit.percent", dp: 1 },
+    { key: "power",    labelKey: "metric.power",    color: "#7c4dff", idx: 11, unitKey: "unit.w", dp: 0 },
+    { key: "current",  labelKey: "metric.current",  color: "#ffd740", idx: 10, unitKey: "unit.a", dp: 1 },
+    { key: "voltage",  labelKey: "metric.voltage",  color: "#ff5252", idx: 2,  unitKey: "unit.voltage", dp: 1 },
+    { key: "temp",     labelKey: "metric.temp",     color: "#ffa000", idx: 3,  unitKey: "unit.temperature", dp: 1 },
+    { key: "battery",  labelKey: "metric.battery",  color: "#69f0ae", idx: 4,  unitKey: "unit.percent", dp: 0 },
+    { key: "altitude", labelKey: "metric.altitude", color: "#ce93d8", idx: 5,  unitKey: "unit.altitude", dp: 0 },
+    { key: "time",     labelKey: "metric.time",     color: null },
+  ];
+  const DETAIL_ROW_MAP = {};
+  DETAIL_ROWS.forEach(r => { DETAIL_ROW_MAP[r.key] = r; });
+  let liveDetailIdx = -1;
+
+  function detailUnit(row) {
+    return row.unitKey ? t(row.unitKey) : (row.unit || "");
+  }
+
+  // Builds the detail rows for a trip — each shows a min–max range (total for
+  // distance, start–end for time). Rows with no data are omitted.
+  function buildDetailHtml(track) {
+    const ts = track.timeseries || [];
+    const s = track.stats || {};
+    let html = "";
+    for (const r of DETAIL_ROWS) {
+      let range = null;
+      if (r.key === "distance") {
+        if (s.distanceKm > 0) range = s.distanceKm.toFixed(2) + " " + detailUnit(r);
+      } else if (r.key === "time") {
+        const start = (track.dateStart || "").split("T")[1];
+        const end = (track.dateEnd || "").split("T")[1];
+        if (start) {
+          range = start.substring(0, 8) + " - " + (end ? end.substring(0, 8) : start.substring(0, 8));
+        }
+      } else if (r.key === "speed") {
+        if ((s.avgSpeed || 0) !== 0 || (s.maxSpeed || 0) !== 0) {
+          range = (s.avgSpeed || 0) + " / " + (s.maxSpeed || 0) + " " + detailUnit(r);
+        }
+      } else {
+        let mn = Infinity, mx = -Infinity, hasData = false;
+        for (const row of ts) {
+          const v = row[r.idx];
+          if (typeof v !== "number") continue;
+          if (v < mn) mn = v;
+          if (v > mx) mx = v;
+          if (v !== 0) hasData = true;
+        }
+        if (hasData && isFinite(mn)) {
+          range = mn.toFixed(r.dp) + " - " + mx.toFixed(r.dp) + " " + detailUnit(r);
+        }
+      }
+      if (range == null) continue;
+      const dot = r.color ? `<i class="clr" style="background:${r.color}"></i>` : "";
+      html += `<div class="detail-row" data-row="${r.key}"><span>${dot}${escapeHtml(t(r.labelKey))}</span>` +
+              `<span class="detail-val" data-range="${escapeHtml(range)}">${escapeHtml(range)}</span></div>`;
+    }
+    return html;
+  }
+
+  function clockAt(track, sec) {
+    const baseMs = Date.parse(track.dateStart || "");
+    if (isNaN(baseMs)) return "—";
+    const d = new Date(baseMs + sec * 1000);
+    const p = (n) => String(n).padStart(2, "0");
+    return p(d.getHours()) + ":" + p(d.getMinutes()) + ":" + p(d.getSeconds());
+  }
+
+  // Fills a trip's detail rows with the values at one timeseries sample.
+  function setDetailRowsLive(trackIdx, sampleIdx) {
+    const track = allTracks[trackIdx];
+    if (!track || !track.timeseries) return;
+    const row = track.timeseries[sampleIdx];
+    if (!row) return;
+    const item = document.querySelector(`.trip-item[data-idx="${trackIdx}"]`);
+    if (!item) return;
+    const cumKm = getCumDistTs(track)[sampleIdx] || 0;
+    item.querySelectorAll(".detail-row").forEach(rowEl => {
+      const r = DETAIL_ROW_MAP[rowEl.dataset.row];
+      const valEl = rowEl.querySelector(".detail-val");
+      if (!r || !valEl) return;
+      let txt = null;
+      if (r.key === "distance") txt = cumKm.toFixed(2) + " " + detailUnit(r);
+      else if (r.key === "time") txt = clockAt(track, row[0] || 0);
+      else if (r.idx != null) {
+        const v = row[r.idx];
+        txt = (typeof v === "number" ? v.toFixed(r.dp) : "0") + " " + detailUnit(r);
+      }
+      if (txt != null) valEl.textContent = txt;
+    });
+    liveDetailIdx = trackIdx;
+  }
+
+  // Reverts the detail rows back to their static ranges.
+  function restoreDetailRows() {
+    if (liveDetailIdx < 0) return;
+    const item = document.querySelector(`.trip-item[data-idx="${liveDetailIdx}"]`);
+    liveDetailIdx = -1;
+    if (!item) return;
+    item.querySelectorAll(".detail-val").forEach(el => {
+      if (el.dataset.range != null) el.textContent = el.dataset.range;
+    });
+  }
 
   function drawChart(canvas, trackIdx) {
     const track = allTracks[trackIdx];
@@ -1509,7 +1682,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     const ch = h - pad.top - pad.bottom;
 
     const activeSeries = SERIES.filter(s => {
-      for (const row of ts) if (row[s.idx] !== 0) return true;
+      for (const row of ts) if ((row[s.idx] || 0) !== 0) return true;
       return false;
     });
 
@@ -1639,7 +1812,7 @@ document.addEventListener("DOMContentLoaded", async function () {
   document.addEventListener("mousemove", (e) => {
     const canvas = e.target.closest(".trip-chart");
     if (!canvas || !canvas._chartData) {
-      document.querySelectorAll(".chart-tooltip").forEach(t => t.classList.add("hidden"));
+      restoreDetailRows();
       hideChartMarker();
       return;
     }
@@ -1656,26 +1829,13 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     const row = cd.ts[best];
-    const wrap = canvas.closest(".chart-wrap");
-    const tip = wrap.querySelector(".chart-tooltip");
-
     const trackIdx = parseInt(canvas.dataset.idx);
-    const cumKm = getCumDistTs(allTracks[trackIdx])[best] || 0;
 
-    let html = `<span style="color:#888">${formatSec(row[0])}</span> <span style="color:#66bb6a">${cumKm.toFixed(2)} ${t("unit.distance")}</span>`;
-    for (const s of cd.activeSeries) {
-      html += `<br><i class="clr" style="background:${CHART_COLORS[s.key]}"></i>${t(s.labelKey)}: <b>${row[s.idx].toFixed(1)}</b> ${t(s.unitKey)}`;
-    }
-    tip.innerHTML = html;
-    tip.classList.remove("hidden");
+    // Scrubbing the chart fills the detail rows with live values (the rows
+    // replace the old floating tooltip; they revert to ranges on mouse-out).
+    setDetailRowsLive(trackIdx, best);
 
-    const tipW = tip.offsetWidth;
-    let tx = mx + 10;
-    if (tx + tipW > rect.width) tx = mx - tipW - 10;
-    tip.style.left = tx + "px";
-    tip.style.top = "4px";
-
-    drawChart(canvas, parseInt(canvas.dataset.idx));
+    drawChart(canvas, trackIdx);
     drawCrosshair(canvas, best);
 
     const lat = row[6] || 0;
@@ -1692,7 +1852,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     map.setView(canvas._hoverLatLon, map.getZoom(), { animate: true });
   });
 
-  document.addEventListener("mouseleave", () => { hideChartMarker(); }, true);
+  document.addEventListener("mouseleave", () => { hideChartMarker(); restoreDetailRows(); }, true);
 
   function formatSec(s) {
     const m = Math.floor(s / 60);
@@ -1718,8 +1878,6 @@ document.addEventListener("DOMContentLoaded", async function () {
   function selectTrip(idx) {
     if (selectedIdx === idx) {
       selectedIdx = -1;
-      paintMode = null;
-      tripList.querySelectorAll(".paint-btn.active").forEach(b => b.classList.remove("active"));
       updateGlow();
       fitAll();
       tooltip.classList.add("hidden");
@@ -1730,8 +1888,6 @@ document.addEventListener("DOMContentLoaded", async function () {
     }
 
     selectedIdx = idx;
-    paintMode = null;
-    tripList.querySelectorAll(".paint-btn.active").forEach(b => b.classList.remove("active"));
 
     // Force selected track visible and check its checkbox
     trackVisible.add(idx);
@@ -1796,7 +1952,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
   });
 
-  // --- Programmatic data injection ---
+  // --- Programmatic data injection (used by EvenDarkerBot Android app) ---
   // Accepts a base64-encoded .dbb (ZIP) or .csv file and loads it.
   // Does NOT save to recents or cache — keeps the viewer clean for embedded use.
   window.loadFileFromBase64 = async function (base64String, filename) {

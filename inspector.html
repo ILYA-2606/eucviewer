@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trip Inspector &mdash; DarknessBot</title>
+    <title>Trip Inspector &mdash; EUC Planet</title>
     <link rel="icon" href="static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
     <link rel="stylesheet" href="static/css/inspector.css?v=10" />
@@ -84,10 +84,21 @@
                             <select id="color-select">
                                 <option value="solid" selected data-i18n="inspector.solid">Solid</option>
                                 <option value="speed" data-i18n="metric.speed">Speed</option>
+                                <option value="pwm" data-i18n="metric.pwm">PWM</option>
+                                <option value="power" data-i18n="metric.power">Power</option>
+                                <option value="current" data-i18n="metric.current">Current</option>
                                 <option value="battery" data-i18n="metric.battery">Battery</option>
                                 <option value="voltage" data-i18n="metric.voltage">Voltage</option>
                                 <option value="temp" data-i18n="metric.temp">Temp</option>
                                 <option value="altitude" data-i18n="metric.altitude">Altitude</option>
+                            </select>
+                        </label>
+                        <label>
+                            <span data-i18n="inspector.traceMode">Trace mode</span>
+                            <select id="trace-mode-select">
+                                <option value="trail-fixed" selected data-i18n="inspector.trail">Trail</option>
+                                <option value="trail-dynamic" data-i18n="inspector.trailDynamic">Trail dynamic</option>
+                                <option value="whole" data-i18n="inspector.wholeRoute">Whole route</option>
                             </select>
                         </label>
                         <div class="follow-group">
@@ -119,6 +130,18 @@
             <aside id="charts">
                 <div class="chart-block" data-key="speed">
                     <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label" data-i18n="metric.speed">Speed</span><span class="chart-reading" data-reading></span></div>
+                    <canvas></canvas>
+                </div>
+                <div class="chart-block" data-key="pwm">
+                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label">PWM</span><span class="chart-reading" data-reading></span></div>
+                    <canvas></canvas>
+                </div>
+                <div class="chart-block" data-key="power">
+                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label">Power</span><span class="chart-reading" data-reading></span></div>
+                    <canvas></canvas>
+                </div>
+                <div class="chart-block" data-key="current">
+                    <div class="chart-header"><span class="chart-swatch"></span><span class="chart-label">Current</span><span class="chart-reading" data-reading></span></div>
                     <canvas></canvas>
                 </div>
                 <div class="chart-block" data-key="battery">
@@ -165,6 +188,6 @@
 
     <script src="static/js/i18n.js?v=5"></script>
     <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-    <script src="static/js/inspector.js?v=23"></script>
+    <script src="static/js/inspector.js?v=28"></script>
 </body>
 </html>

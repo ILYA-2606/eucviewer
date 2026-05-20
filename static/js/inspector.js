@@ -76,10 +76,12 @@
     return;
   }
 
-  // Timeseries layout: [sec, speed, voltage, temp, battery, altitude, lat, lon, mileageKm]
+  // Timeseries layout: [sec, speed, voltage, temp, battery, altitude, lat, lon, mileageKm, pwm, current, power]
   const SEC = 0, SPD = 1, VOLT = 2, TEMP = 3, BATT = 4, ALT = 5, LAT = 6, LON = 7, MILEAGE = 8;
+  const PWM = 9, CURRENT = 10, POWER = 11;
   // Points layout: [lat, lon, speed, alt, volt, temp, battery]
   const P_LAT = 0, P_LON = 1, P_SPD = 2, P_ALT = 3, P_VOLT = 4, P_TEMP = 5, P_BATT = 6;
+  const P_PWM = 7, P_CURRENT = 8, P_POWER = 9;
 
   const duration = ts[ts.length - 1][SEC] - ts[0][SEC];
   const t0 = ts[0][SEC];
@@ -160,7 +162,7 @@
   let routePoints = Array.isArray(track.points) ? track.points.filter((p) => p[P_LAT] !== 0 && p[P_LON] !== 0) : [];
   if (routePoints.length < 2) {
     // Fallback for legacy payloads: reconstruct route from timeseries GPS rows.
-    routePoints = gpsPoints.map((r) => [r[LAT], r[LON], r[SPD], r[ALT], r[VOLT], r[TEMP], r[BATT]]);
+    routePoints = gpsPoints.map((r) => [r[LAT], r[LON], r[SPD], r[ALT], r[VOLT], r[TEMP], r[BATT], r[PWM], r[CURRENT], r[POWER]]);
   }
   const hasGps = routePoints.length > 1;
 
@@ -207,6 +209,9 @@
   // Color-by configs: invert=true means high value is "good" (green end of palette).
   const COLOR_MODES = {
     speed:    { pointIdx: P_SPD,  unitKey: "unit.speed", invert: false },
+    pwm:      { pointIdx: P_PWM,     unit: "%",    invert: false },
+    power:    { pointIdx: P_POWER,   unit: "unit.w",    invert: false },
+    current:  { pointIdx: P_CURRENT, unit: "unit.a",    invert: false },
     battery:  { pointIdx: P_BATT, unitKey: "unit.percent", invert: true  },
     voltage:  { pointIdx: P_VOLT, unitKey: "unit.voltage", invert: true  },
     temp:     { pointIdx: P_TEMP, unitKey: "unit.temperature", invert: false },
@@ -270,6 +275,7 @@
   let coords = [];
   let currentTheme = "satellite";
   let currentColorMode = "solid";
+  let currentTraceMode = "trail-fixed"; // trail-fixed | trail-dynamic | whole
   let currentRouteIdx = 0;
 
   function applyTheme(name) {
@@ -284,56 +290,6 @@
     currentTheme = name;
   }
 
-  function buildGradientExpr(mode) {
-    const cfg = COLOR_MODES[mode];
-    if (!cfg || coords.length < 2) return null;
-    // Cumulative distance along the GPS-filtered coords to compute line-progress per vertex.
-    let total = 0;
-    const cum = new Float64Array(coords.length);
-    for (let i = 1; i < coords.length; i++) {
-      total += haversineKm(coords[i - 1][1], coords[i - 1][0], coords[i][1], coords[i][0]);
-      cum[i] = total;
-    }
-    if (total <= 0) return null;
-
-    // Metric values aligned with coords (same filter: LAT/LON !== 0).
-    const vals = [];
-    for (let i = 0; i < ts.length; i++) {
-      if (hasGpsRow(ts[i])) vals.push(ts[i][cfg.idx]);
-    }
-    let minV = Infinity, maxV = -Infinity;
-    for (const v of vals) { if (v < minV) minV = v; if (v > maxV) maxV = v; }
-    if (minV === maxV) { maxV = minV + 1; }
-
-    const stops = cfg.invert ? PALETTE.slice().reverse() : PALETTE;
-    function colorAt(v) {
-      const t = Math.max(0, Math.min(1, (v - minV) / (maxV - minV)));
-      const pos = t * (stops.length - 1);
-      const i = Math.floor(pos);
-      const f = pos - i;
-      if (i >= stops.length - 1) return stops[stops.length - 1];
-      return lerpColor(stops[i], stops[i + 1], f);
-    }
-
-    const expr = ["interpolate", ["linear"], ["line-progress"]];
-    // Downsample to keep expression size reasonable (cap ~150 stops).
-    const n = vals.length;
-    const step = Math.max(1, Math.floor(n / 150));
-    let lastP = -1;
-    for (let i = 0; i < n; i += step) {
-      const p = cum[i] / total;
-      if (p <= lastP) continue;
-      expr.push(p, colorAt(vals[i]));
-      lastP = p;
-    }
-    // Always include final vertex.
-    const lastIdx = n - 1;
-    if (lastP < 1) {
-      expr.push(1, colorAt(vals[lastIdx]));
-    }
-    return { expr, min: minV, max: maxV, invert: cfg.invert, unit: tr(cfg.unitKey) };
-  }
-
   function metricColor(value, minV, maxV, invert) {
     const stops = invert ? PALETTE.slice().reverse() : PALETTE;
     const t = Math.max(0, Math.min(1, (value - minV) / (maxV - minV)));
@@ -344,11 +300,16 @@
     return lerpColor(stops[i], stops[i + 1], f);
   }
 
-  function getModeStats(mode) {
+  // Value range for a metric. With `endIdx` the scan is limited to the
+  // traveled portion [0..endIdx] (live scale); without it, the whole trip.
+  function getModeStats(mode, endIdx) {
     const cfg = COLOR_MODES[mode];
-    if (!cfg) return null;
+    if (!cfg || !routePoints.length) return null;
+    const end = endIdx == null
+      ? routePoints.length - 1
+      : Math.max(0, Math.min(endIdx, routePoints.length - 1));
     let minV = Infinity, maxV = -Infinity;
-    for (let i = 0; i < routePoints.length; i++) {
+    for (let i = 0; i <= end; i++) {
       const v = routePoints[i][cfg.pointIdx];
       if (v < minV) minV = v;
       if (v > maxV) maxV = v;
@@ -358,30 +319,37 @@
     return { min: minV, max: maxV, invert: cfg.invert, unit: tr(cfg.unitKey) };
   }
 
-  function buildTraveledGradientExpr(mode, routeIdx) {
+  // Builds a line-gradient expression for coords[0..endIdx]. Each vertex's
+  // colour is pinned to its true distance fraction along the line, so the
+  // palette stays locked to the ground as the trail grows — no crawling.
+  function buildTraceGradient(mode, endIdx, stats) {
     const cfg = COLOR_MODES[mode];
-    const stats = getModeStats(mode);
     if (!cfg || !stats) return null;
-
-    const vals = [];
-    const end = Math.max(0, Math.min(routeIdx, routePoints.length - 1));
-    for (let i = 0; i <= end; i++) {
-      vals.push(routePoints[i][cfg.pointIdx]);
+    const end = Math.max(0, Math.min(endIdx, coords.length - 1, routePoints.length - 1));
+    if (end < 1) return null;
+    let tot = 0;
+    const cum = new Float64Array(end + 1);
+    for (let i = 1; i <= end; i++) {
+      tot += haversineKm(coords[i - 1][1], coords[i - 1][0], coords[i][1], coords[i][0]);
+      cum[i] = tot;
     }
-    if (vals.length < 2) return null;
-
+    if (tot <= 0) return null;
     const expr = ["interpolate", ["linear"], ["line-progress"]];
-    const n = vals.length;
-    const step = Math.max(1, Math.floor(n / 150));
-    for (let i = 0; i < n; i += step) {
-      const p = i / (n - 1);
-      expr.push(p, metricColor(vals[i], stats.min, stats.max, stats.invert));
+    // Downsample against the FULL route length, not the growing traveled
+    // length — a constant step keeps the same vertices carrying colour stops
+    // every frame, so the drawn trail's colours don't re-sample as it grows.
+    const step = Math.max(1, Math.floor(coords.length / 150));
+    let lastP = -1;
+    for (let i = 0; i <= end; i += step) {
+      const p = cum[i] / tot;
+      if (p <= lastP) continue;
+      expr.push(p, metricColor(routePoints[i][cfg.pointIdx], stats.min, stats.max, stats.invert));
+      lastP = p;
     }
-    if ((n - 1) % step !== 0) {
-      expr.push(1, metricColor(vals[n - 1], stats.min, stats.max, stats.invert));
+    if (lastP < 1) {
+      expr.push(1, metricColor(routePoints[end][cfg.pointIdx], stats.min, stats.max, stats.invert));
     }
-
-    return { expr, min: stats.min, max: stats.max, invert: stats.invert, unit: stats.unit };
+    return expr;
   }
 
   function lerpColor(a, b, t) {
@@ -395,40 +363,120 @@
     return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)];
   }
 
-  function applyColorMode(mode) {
-    if (!map || !map.getLayer("track-line")) return;
-    if (mode === "fixed") mode = "solid";
-    currentColorMode = mode;
+  function updateLegend(stats) {
     const legend = document.getElementById("color-legend");
-    const legendBar = legend.querySelector(".legend-bar");
-    const legendMin = legend.querySelector("[data-legend-min]");
-    const legendMax = legend.querySelector("[data-legend-max]");
+    if (!stats) { legend.classList.add("hidden"); return; }
+    legend.querySelector(".legend-bar").classList.toggle("inverted", !!stats.invert);
+    const fmt = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + stats.unit;
+    legend.querySelector("[data-legend-min]").textContent = fmt(stats.min);
+    legend.querySelector("[data-legend-max]").textContent = fmt(stats.max);
+    legend.classList.remove("hidden");
+  }
 
+  // Refreshes the moving trail gradient. No-op for "whole" and "solid",
+  // which are static and fully handled by applyTrace().
+  function updateTraceGradient() {
+    if (currentColorMode === "solid" || currentTraceMode === "whole") return;
+    if (!map || !map.getLayer("traveled-line")) return;
+    const stats = currentTraceMode === "trail-dynamic"
+      ? getModeStats(currentColorMode, currentRouteIdx)
+      : getModeStats(currentColorMode);
+    if (!stats) return;
+    const expr = buildTraceGradient(currentColorMode, currentRouteIdx, stats);
+    if (expr) {
+      map.setPaintProperty("traveled-line", "line-gradient", expr);
+      map.setPaintProperty("traveled-line", "line-color", "#ffffff");
+    }
+    updateLegend(stats);
+  }
+
+  // Applies the current Trace color + Trace mode pair to the two line layers.
+  // Sets up the static parts only; the moving trail is filled by
+  // updateTraceGradient() (here and once per playback frame).
+  //   trail-fixed   — trail behind the marker, colour scale from the whole trip
+  //   trail-dynamic — trail behind the marker, scale = min/max of trail so far
+  //   whole         — entire route at once, colour scale from the whole trip
+  function applyTrace() {
+    if (!map || !map.getLayer("track-line") || !map.getLayer("traveled-line")) return;
+    const mode = currentColorMode;
+    const whole = currentTraceMode === "whole";
+
+    // Reset both layers to a known baseline.
     map.setPaintProperty("track-line", "line-gradient", undefined);
-    map.setPaintProperty("track-line", "line-color", "#00e5ff");
-    map.setPaintProperty("track-line", "line-opacity", mode === "solid" ? 0.85 : 0.35);
-    if (map.getLayer("traveled-line")) map.setLayoutProperty("traveled-line", "visibility", "visible");
+    map.setPaintProperty("traveled-line", "line-gradient", undefined);
 
     if (mode === "solid") {
-      map.setPaintProperty("traveled-line", "line-gradient", undefined);
-      map.setPaintProperty("traveled-line", "line-color", "#ffa000");
-      map.setPaintProperty("track-line", "line-gradient", undefined);
-      legend.classList.add("hidden");
+      updateLegend(null);
+      if (whole) {
+        // Whole path, single colour, no reveal trail.
+        map.setLayoutProperty("traveled-line", "visibility", "none");
+        map.setPaintProperty("track-line", "line-color", "#ffa000");
+        map.setPaintProperty("track-line", "line-opacity", 0.9);
+      } else {
+        map.setLayoutProperty("traveled-line", "visibility", "visible");
+        map.setPaintProperty("traveled-line", "line-color", "#ffa000");
+        map.setPaintProperty("track-line", "line-color", "#00e5ff");
+        map.setPaintProperty("track-line", "line-opacity", 0.85);
+      }
       return;
     }
 
-    const built = buildTraveledGradientExpr(mode, currentRouteIdx);
-    if (!built) return;
+    if (whole) {
+      // Colour the entire route on the base track layer; hide the trail.
+      const stats = getModeStats(mode);
+      const expr = buildTraceGradient(mode, coords.length - 1, stats);
+      map.setLayoutProperty("traveled-line", "visibility", "none");
+      map.setPaintProperty("track-line", "line-opacity", 0.95);
+      if (expr) {
+        map.setPaintProperty("track-line", "line-gradient", expr);
+        map.setPaintProperty("track-line", "line-color", "#ffffff");
+      }
+      updateLegend(stats);
+      return;
+    }
 
-    map.setPaintProperty("traveled-line", "line-gradient", built.expr);
-    // line-gradient requires line-color to be set to a dummy value.
-    map.setPaintProperty("traveled-line", "line-color", "#ffffff");
+    // trail-fixed / trail-dynamic: faint full-route ghost + gradient trail.
+    map.setLayoutProperty("traveled-line", "visibility", "visible");
+    map.setPaintProperty("traveled-line", "line-color", "#ffa000");
+    map.setPaintProperty("track-line", "line-color", "#00e5ff");
+    map.setPaintProperty("track-line", "line-opacity", 0.35);
+    updateTraceGradient();
+  }
 
-    legendBar.classList.toggle("inverted", !!built.invert);
-    const fmt = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + built.unit;
-    legendMin.textContent = fmt(built.min);
-    legendMax.textContent = fmt(built.max);
-    legend.classList.remove("hidden");
+  // "Trail (dynamic)" needs a metric to scale against, so it is only valid
+  // when Trace color is a metric. Disable it for Solid and, if it was the
+  // active choice, fall back to "Trail (fixed)".
+  function syncTraceModeOptions() {
+    const sel = document.getElementById("trace-mode-select");
+    if (!sel) return;
+    const dynOpt = sel.querySelector('option[value="trail-dynamic"]');
+    const solid = currentColorMode === "solid";
+    if (dynOpt) dynOpt.disabled = solid;
+    if (solid && currentTraceMode === "trail-dynamic") {
+      currentTraceMode = "trail-fixed";
+      sel.value = "trail-fixed";
+    }
+  }
+
+  // Greys out trace-colour options that have no chart — i.e. metrics this trip
+  // carries no data for — so the colour picker matches the charts shown.
+  // Falls back to Solid if the active colour becomes unavailable.
+  function syncColorSelectOptions() {
+    const sel = document.getElementById("color-select");
+    if (!sel) return;
+    for (const opt of sel.options) {
+      const key = opt.value;
+      if (key === "solid") { opt.disabled = false; continue; }
+      const block = document.querySelector(`.chart-block[data-key="${key}"]`);
+      opt.disabled = !block || block.classList.contains("hidden");
+    }
+    if (currentColorMode !== "solid") {
+      const active = sel.querySelector(`option[value="${currentColorMode}"]`);
+      if (active && active.disabled) {
+        currentColorMode = "solid";
+        sel.value = "solid";
+      }
+    }
   }
 
   if (hasGps) {
@@ -534,7 +582,15 @@
       const controls = document.getElementById("map-controls");
       controls.classList.remove("hidden");
       document.getElementById("theme-select").addEventListener("change", (e) => applyTheme(e.target.value));
-      document.getElementById("color-select").addEventListener("change", (e) => applyColorMode(e.target.value));
+      document.getElementById("color-select").addEventListener("change", (e) => {
+        currentColorMode = e.target.value;
+        syncTraceModeOptions();
+        applyTrace();
+      });
+      document.getElementById("trace-mode-select").addEventListener("change", (e) => {
+        currentTraceMode = e.target.value;
+        applyTrace();
+      });
       const followPanEl = document.getElementById("follow-pan");
       const followRotateEl = document.getElementById("follow-rotate");
       if (followPanEl) {
@@ -567,7 +623,9 @@
           controls.classList.toggle("collapsed");
         });
       }
-      applyColorMode(currentColorMode);
+      syncColorSelectOptions();
+      syncTraceModeOptions();
+      applyTrace();
 
       updateUI();
     });
@@ -579,17 +637,36 @@
   // ---------- Charts ----------
   const CHART_CONFIG = {
     speed:    { color: "#00e5ff", idx: SPD,  unitKey: "unit.speed" },
+    pwm:      { color: "#ff4081", idx: PWM,     unit: " %" },
+    power:    { color: "#7c4dff", idx: POWER,   unit: "unit.w" },
+    current:  { color: "#ffd740", idx: CURRENT, unit: "unit.a" },
     voltage:  { color: "#ff5252", idx: VOLT, unitKey: "unit.voltage" },
     temp:     { color: "#ffa000", idx: TEMP, unitKey: "unit.temperature" },
     battery:  { color: "#69f0ae", idx: BATT, unitKey: "unit.percent" },
     altitude: { color: "#ce93d8", idx: ALT,  unitKey: "unit.altitude" },
   };
 
+  // PWM / Current / Power only exist on some wheels \u2014 hide a chart when the
+  // trip carries no data for it (incl. legacy cached tracks without the column).
+  const OPTIONAL_CHARTS = new Set(["pwm", "current", "power"]);
+  function chartHasData(idx) {
+    for (let i = 0; i < ts.length; i++) {
+      const v = ts[i][idx];
+      if (typeof v === "number" && v !== 0) return true;
+    }
+    return false;
+  }
+
   const chartBlocks = document.querySelectorAll(".chart-block");
   const charts = [];
   chartBlocks.forEach(block => {
     const key = block.dataset.key;
     const cfg = CHART_CONFIG[key];
+    if (!cfg) return;
+    if (OPTIONAL_CHARTS.has(key) && !chartHasData(cfg.idx)) {
+      block.classList.add("hidden");
+      return;
+    }
     const canvas = block.querySelector("canvas");
     const reading = block.querySelector("[data-reading]");
     charts.push({ key, cfg, canvas, reading, block });
@@ -830,20 +907,16 @@
         const markerPos = [lerp(a[0], b[0], routeFrac), lerp(a[1], b[1], routeFrac)];
         riderMarker.setLngLat(markerPos);
 
+        // Trail ends exactly on coords[currentRouteIdx] — no interpolated marker
+        // point — so the gradient's line-progress matches the geometry and the
+        // colours stay pinned to the ground instead of crawling each frame.
         const traveled = coords.slice(0, currentRouteIdx + 1);
-        if (b !== a) traveled.push(markerPos);
         if (traveled.length >= 2) {
           map.getSource("traveled").setData({
             type: "Feature", geometry: { type: "LineString", coordinates: traveled }
           });
 
-          if (currentColorMode !== "solid") {
-            const built = buildTraveledGradientExpr(currentColorMode, currentRouteIdx);
-            if (built) {
-              map.setPaintProperty("traveled-line", "line-gradient", built.expr);
-              map.setPaintProperty("traveled-line", "line-color", "#ffffff");
-            }
-          }
+          updateTraceGradient();
         }
         if ((followPan || followRotate || followZoom) && playing) {
           const nowMs = performance.now();
