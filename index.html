@@ -6,7 +6,7 @@
     <title>DarknessBot Trip Viewer</title>
     <link rel="icon" href="static/favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <link rel="stylesheet" href="static/css/style.css?v=22" />
+    <link rel="stylesheet" href="static/css/style.css?v=24" />
 </head>
 <body>
     <div id="map"></div>
@@ -18,7 +18,7 @@
         </div>
         <div id="upload-box">
             <img id="upload-icon" src="static/favicon.svg" alt="" />
-            <h1><a id="app-link" href="https://trips.darknessproduction.com/" target="_blank" rel="noopener"><strong>DarknessBot</strong></a> <span data-i18n="app.headingSuffix">Trip Viewer</span></h1>
+            <h1><a id="app-link" href="https://darknessproduction.com/#darknessbot" target="_blank" rel="noopener"><strong>DarknessBot</strong></a> <span id="app-heading-suffix" data-i18n="app.headingSuffix">Trip Viewer</span></h1>
             <div id="upload-hint">
                 <p data-i18n-html="upload.hint">In DarknessBot, open <strong>Trips</strong> and share a ride (.csv), or choose <strong>Export trips</strong> from the Settings / Application / App Data (.dbb).</p>
             </div>
@@ -76,6 +76,18 @@
             if (window.appI18n) window.appI18n.ready.then(updatePageVersion);
             else updatePageVersion();
             window.addEventListener('i18n:change', updatePageVersion);
+        })();
+        (function(){
+            function updateAppLink() {
+                var appLink = document.getElementById('app-link');
+                var i18n = window.appI18n;
+                appLink.href = i18n && i18n.language === 'ru'
+                    ? 'https://darknessproduction.com/#darknessbot'
+                    : 'https://darknessproduction.com/en/#darknessbot';
+            }
+            if (window.appI18n) window.appI18n.ready.then(updateAppLink);
+            else updateAppLink();
+            window.addEventListener('i18n:change', updateAppLink);
         })();
         (function(){
             var modal = document.getElementById('about-modal');
