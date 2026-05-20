@@ -105,14 +105,33 @@ document.addEventListener("DOMContentLoaded", async function () {
     return arr;
   }
 
-  function heatColor(t) {
+  const TRACE_PALETTE = ["#2962ff", "#00e5ff", "#69f0ae", "#ffeb3b", "#ff5252"];
+
+  function parseHexColor(hex) {
+    return [
+      parseInt(hex.slice(1, 3), 16),
+      parseInt(hex.slice(3, 5), 16),
+      parseInt(hex.slice(5, 7), 16),
+    ];
+  }
+
+  function lerpTraceColor(a, b, t) {
+    const ca = parseHexColor(a);
+    const cb = parseHexColor(b);
+    const r = Math.round(ca[0] + (cb[0] - ca[0]) * t);
+    const g = Math.round(ca[1] + (cb[1] - ca[1]) * t);
+    const bl = Math.round(ca[2] + (cb[2] - ca[2]) * t);
+    return `${r},${g},${bl}`;
+  }
+
+  function metricTraceColor(t, invert) {
     t = Math.max(0, Math.min(1, t));
-    let r, g, b;
-    if (t < 0.25)      { const f = t / 0.25;          r = 0;   g = Math.round(255 * f); b = 255; }
-    else if (t < 0.5)  { const f = (t - 0.25) / 0.25; r = 0;   g = 255; b = Math.round(255 * (1 - f)); }
-    else if (t < 0.75) { const f = (t - 0.5) / 0.25;  r = Math.round(255 * f); g = 255; b = 0; }
-    else                { const f = (t - 0.75) / 0.25; r = 255; g = Math.round(255 * (1 - f)); b = 0; }
-    return `${r},${g},${b}`;
+    const stops = invert ? TRACE_PALETTE.slice().reverse() : TRACE_PALETTE;
+    const pos = t * (stops.length - 1);
+    const idx = Math.floor(pos);
+    const f = pos - idx;
+    if (idx >= stops.length - 1) return lerpTraceColor(stops[stops.length - 1], stops[stops.length - 1], 0);
+    return lerpTraceColor(stops[idx], stops[idx + 1], f);
   }
 
   function distanceColor(t) {
@@ -125,15 +144,15 @@ document.addEventListener("DOMContentLoaded", async function () {
   }
 
   const PAINT_METRICS = {
-    distance: { pointIdx: -1, labelKey: "metric.distance" },
-    speed:    { pointIdx: 2, labelKey: "metric.speed" },
-    pwm:      { pointIdx: 7, labelKey: "metric.pwm" },
-    power:    { pointIdx: 9, labelKey: "metric.power" },
-    current:  { pointIdx: 8, labelKey: "metric.current" },
-    battery:  { pointIdx: 6, labelKey: "metric.battery" },
-    voltage:  { pointIdx: 4, labelKey: "metric.voltage" },
-    temp:     { pointIdx: 5, labelKey: "metric.temp" },
-    altitude: { pointIdx: 3, labelKey: "metric.altitude" },
+    distance: { pointIdx: -1, labelKey: "metric.distance", unitKey: "unit.distance", invert: false },
+    speed:    { pointIdx: 2, labelKey: "metric.speed", unitKey: "unit.speed", invert: false },
+    pwm:      { pointIdx: 7, labelKey: "metric.pwm", unitKey: "unit.percent", invert: false },
+    power:    { pointIdx: 9, labelKey: "metric.power", unitKey: "unit.w", invert: false },
+    current:  { pointIdx: 8, labelKey: "metric.current", unitKey: "unit.a", invert: false },
+    battery:  { pointIdx: 6, labelKey: "metric.battery", unitKey: "unit.percent", invert: true },
+    voltage:  { pointIdx: 4, labelKey: "metric.voltage", unitKey: "unit.voltage", invert: true },
+    temp:     { pointIdx: 5, labelKey: "metric.temp", unitKey: "unit.temperature", invert: false },
+    altitude: { pointIdx: 3, labelKey: "metric.altitude", unitKey: "unit.altitude", invert: false },
   };
 
   // --- Glow canvas overlay ---
@@ -272,7 +291,7 @@ document.addEventListener("DOMContentLoaded", async function () {
               ctx.globalCompositeOperation = pass.comp;
               for (let i = 1; i < layerPts.length; i++) {
                 const t = pd.span ? (pd.values[i] - pd.min) / pd.span : 0.5;
-                ctx.strokeStyle = `rgba(${(pd.colorFn || heatColor)(t)},${pass.alpha})`;
+                ctx.strokeStyle = `rgba(${pd.colorFn(t)},${pass.alpha})`;
                 ctx.beginPath();
                 ctx.moveTo(layerPts[i-1][0], layerPts[i-1][1]);
                 ctx.lineTo(layerPts[i][0], layerPts[i][1]);
@@ -340,7 +359,7 @@ document.addEventListener("DOMContentLoaded", async function () {
     const track = selectedIdx >= 0 ? allTracks[selectedIdx] : null;
     if (metric && track && track.points.length >= 2) {
       const pts = track.points;
-      let values, min, max, colorFn, legMin, legMax;
+      let values, min, max, colorFn, legMin, legMax, invert;
       if (metric.pointIdx === -1) {
         // Distance: colour by progress along the route; legend shows km.
         values = pts.map((_, idx) => idx);
@@ -348,6 +367,7 @@ document.addEventListener("DOMContentLoaded", async function () {
         colorFn = distanceColor;
         const cum = getCumDistPts(track);
         legMin = 0; legMax = cum[cum.length - 1] || 0;
+        invert = false;
       } else {
         values = pts.map((p) => p[metric.pointIdx]);
         min = Infinity; max = -Infinity;
@@ -356,17 +376,19 @@ document.addEventListener("DOMContentLoaded", async function () {
           if (v < min) min = v;
           if (v > max) max = v;
         }
-        colorFn = heatColor;
+        invert = !!metric.invert;
+        colorFn = (value) => metricTraceColor(value, invert);
         legMin = min; legMax = max;
       }
-      if (!isFinite(min) || !isFinite(max) || min === max) {
+      if (!isFinite(min) || !isFinite(max)) {
         // Metric absent for this trip (legacy track or an empty column).
         glowLayer.setPaint(null);
         updateTraceLegend(null);
         return;
       }
+      if (min === max) max = min + 1;
       glowLayer.setPaint({ trackIdx: selectedIdx, values, min, max, span: max - min, colorFn });
-      updateTraceLegend(traceColor, legMin, legMax);
+      updateTraceLegend(traceColor, legMin, legMax, invert);
     } else {
       glowLayer.setPaint(null);
       updateTraceLegend(null);
@@ -392,19 +414,24 @@ document.addEventListener("DOMContentLoaded", async function () {
     if (glowLayer) glowLayer.redraw();
   }
 
-  const TRACE_UNITS = { speed: "km/h", pwm: "%", power: "W", current: "A", battery: "%", voltage: "V", temp: "°C", altitude: "m", distance: "km" };
   const legendEl = document.getElementById("color-legend");
-  function legendGradientCss(key) {
-    // distance → distanceColor ramp; metrics → heatColor ramp.
-    return key === "distance"
-      ? "linear-gradient(90deg, rgb(165,75,235), rgb(60,220,120))"
-      : "linear-gradient(90deg, rgb(0,0,255), rgb(0,255,255), rgb(0,255,0), rgb(255,255,0), rgb(255,0,0))";
+  function traceUnit(key) {
+    const metric = PAINT_METRICS[key];
+    return metric?.unitKey ? t(metric.unitKey) : "";
   }
-  function updateTraceLegend(key, min, max) {
+  function legendGradientCss(key, invert) {
+    if (key === "distance") {
+      return "linear-gradient(90deg, rgb(165,75,235), rgb(60,220,120))";
+    }
+    return invert
+      ? "linear-gradient(90deg, #ff5252 0%, #ffeb3b 25%, #69f0ae 50%, #00e5ff 75%, #2962ff 100%)"
+      : "linear-gradient(90deg, #2962ff 0%, #00e5ff 25%, #69f0ae 50%, #ffeb3b 75%, #ff5252 100%)";
+  }
+  function updateTraceLegend(key, min, max, invert) {
     if (!legendEl) return;
     if (!key || key === "solid") { legendEl.classList.add("hidden"); return; }
-    legendEl.querySelector(".legend-bar").style.background = legendGradientCss(key);
-    const unit = TRACE_UNITS[key] || "";
+    legendEl.querySelector(".legend-bar").style.background = legendGradientCss(key, !!invert);
+    const unit = traceUnit(key);
     const fmt = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(1)) + " " + unit;
     legendEl.querySelector("[data-legend-min]").textContent = fmt(min);
     legendEl.querySelector("[data-legend-max]").textContent = fmt(max);
